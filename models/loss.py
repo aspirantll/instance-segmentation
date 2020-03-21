@@ -13,9 +13,11 @@ import torch
 import math
 from sklearn.utils.extmath import cartesian
 from torch.nn import functional as F
-import torch.nn  as nn
+import torch.nn as nn
 
 import numpy as np
+
+from utils.target_generator import generate_cls_mask
 
 
 def zero_tensor(device):
@@ -61,10 +63,11 @@ class WHDLoss(object):
     def get_loss_names(self):
         return ["kp_pos", "kp_neg"]
 
-    def __call__(self, hm_kp, target_kp):
+    def __call__(self, hm_kp, targets):
         # prepare step
         hm_kp = torch.sigmoid(hm_kp)
         b, c, h, w = hm_kp.shape
+        _, _, polygons_list = targets
         d_max = math.sqrt(h ** 2 + w ** 2)
         all_pixel_locations = torch.from_numpy(
             cartesian([np.arange(h, dtype=np.float32), np.arange(w, dtype=np.float32)])).to(self._device)
@@ -74,19 +77,19 @@ class WHDLoss(object):
         # foreach every matrix
         for b_i in range(b):
             hm_mat = hm_kp[b_i, 0, :, :]
+            polygons = polygons_list[b_i]
             # compute probability sum
             p_sum = hm_mat.sum()
             # expand to a vector
             hm_vec = hm_mat.view(-1)
 
-            target_mask = target_kp[b_i, 0]
-            if target_mask.sum() == 0:
+            if len(polygons) == 0:
                 terms_1.append(torch.sum(hm_vec.pow(self._beta) * d_max / (p_sum + self._epsilon)))
                 terms_2.append(zero_tensor(self._device))
                 continue
 
             # compose key points for the one img
-            target_pixel_locations = target_mask.nonzero().float()
+            target_pixel_locations = torch.from_numpy(np.vstack(polygons)).float().to(self._device)
             # compute distance matrix
             diff = all_pixel_locations.unsqueeze(1) - target_pixel_locations.unsqueeze(0)
             # Euclidean distance
@@ -117,13 +120,19 @@ class FocalLoss(object):
     def get_loss_names(self):
         return ["cls_pos", "cls_neg"]
 
-    def __call__(self, hm_cls, target_cls):
+    def __call__(self, hm_cls, targets):
+        # prepare step
         hm_cls = torch.sigmoid(hm_cls)
-
         print("cls mean:{}, max:{}, min:{}".format(hm_cls.mean().item(), hm_cls.max().item(), hm_cls.min().item()))
+        cls_ids_list, centers_list, polygons_list = targets
+        # handle box size
+        box_sizes = [[tuple(polygon.max(0) - polygon.min(0)) for polygon in polygons] for polygons in polygons_list]
 
-        pos_mask = target_cls.eq(1)
-        neg_mask = target_cls.lt(1)
+        cls_mask = generate_cls_mask(hm_cls.shape, centers_list, cls_ids_list, box_sizes, strategy="smoothing")
+        cls_mask = torch.from_numpy(cls_mask).to(self._device)
+
+        pos_mask = cls_mask.eq(1)
+        neg_mask = cls_mask.lt(1)
 
         num_pos = pos_mask.float().sum()
 
@@ -131,7 +140,7 @@ class FocalLoss(object):
         neg_hm = hm_cls[neg_mask]
 
         pos_loss = torch.log(pos_hm) * torch.pow(1 - pos_hm, self._alpha)
-        neg_loss = torch.log(1 - neg_hm) * torch.pow(neg_hm, self._alpha) * torch.pow(1 - target_cls[neg_mask], self._beta)
+        neg_loss = torch.log(1 - neg_hm) * torch.pow(neg_hm, self._alpha) * torch.pow(1 - cls_mask[neg_mask], self._beta)
 
         pos_loss = - pos_loss.sum() / max(1, num_pos)
         neg_loss = - neg_loss.sum() / max(1, num_pos)
@@ -149,15 +158,15 @@ class AELoss(object):
     def get_loss_names(self):
         return ["ae_push", "ae_pull", "ae_center"]
 
-    def __call__(self, hm_ae, target_ae):
+    def __call__(self, hm_ae, targets):
         """
         :param hm_ae:
-        :param target_ae: (centers,polygons)
+        :param targets: (cls_ids, centers,polygons)
         :return:
         """
         # prepare step
         b, c, h, w = hm_ae.shape
-        target_centers, target_polygons = target_ae
+        _ , centers_list, polygons_list = targets
         # handle the loss
         l_pulls = []
         l_pushs = []
@@ -165,7 +174,7 @@ class AELoss(object):
         # foreach every batch
         for b_i in range(b):
             # select the active point
-            centers, polygons = target_centers[b_i], target_polygons[b_i]
+            centers, polygons = centers_list[b_i], polygons_list[b_i]
             n = len(centers)
             if n == 0:
                 l_pulls.append(zero_tensor(self._device))
@@ -225,9 +234,9 @@ class ComposeLoss(nn.Module):
 
         losses = []
         # compute losses
-        losses.extend(self._cls_loss_fn(hm_cls, targets[0]))
-        losses.extend(self._kp_loss_fn(hm_cls, targets[1]))
-        losses.extend(self._ae_loss_fn(hm_cls, targets[2]))
+        losses.extend(self._cls_loss_fn(hm_cls, targets))
+        losses.extend(self._kp_loss_fn(hm_kp, targets))
+        losses.extend(self._ae_loss_fn(hm_ae, targets))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()

@@ -42,9 +42,6 @@ def collate_fn_with_label(batch):
     batch_inputs = [e for e in zip(*batch)]
     input_tensors = torch.stack(batch_inputs[0])
     labels = [e for e in zip(*batch_inputs[1])]
-    labels = (torch.stack(labels[0]) # cls mask
-              , torch.stack(labels[1])# kp mask
-              , tuple([e for e in zip(*labels[2])])) # ae group
     trans_infos = batch_inputs[2]
     return input_tensors, labels, trans_infos
 
@@ -114,32 +111,40 @@ if __name__== "__main__":
     from PIL import Image
     import cv2
     from matplotlib import pyplot as plt
-    from utils.visualize import visualize_kp
+    from utils.visualize import visualize_box
     import torchvision.transforms.functional as F
 
-    transforms = TrainTransforms(input_size, num_cls)
+    transforms = TrainTransforms(input_size, num_cls, with_flip=True)
 
     data_loader = get_dataloader(batch_size, data_type, data_dir, phase, input_size, transforms)
     print("length:", len(data_loader))
     for iter_id, train_data in enumerate(data_loader):
         inputs = train_data[0]
-        labels = train_data[1]
+        _, centers_list, polygons_list = train_data[1]
         trans_infos = train_data[2]
         for i in range(inputs.shape[0]):
             trans_info = trans_infos[i]
+            centers = centers_list[i]
+            polygons = polygons_list[i]
+
             key = iter_id * batch_size + i
             cv_img = cv2.imread(trans_info.img_path)
 
-            kp_mask = labels[1][i]
-            kp_img = np.transpose(kp_mask.numpy(), (1, 2, 0))
-            transform_img = transforms.transform_image(kp_img, trans_info)
-            cv2.imwrite(op.join(save_dir, "{}_rec_kp.png".format(key)),  transform_img * 255)
+            polygons = [transforms.transform_pixel(polygon, trans_info) for polygon in polygons]
+            centers = transforms.transform_pixel(np.vstack(centers), trans_info)
 
-            kp_arr = kp_mask[0].nonzero().numpy()
-            transform_pts = transforms.transform_pixel(kp_arr, trans_info)
-            img_c = cv2.drawKeypoints(cv_img, cv2.KeyPoint_convert(transform_pts.reshape(-1, 1, 2)), None,
+            img_c = cv2.drawKeypoints(cv_img, cv2.KeyPoint_convert(np.vstack(polygons).reshape((-1, 1, 2))), None,
                                       color=(255, 0, 0))
-            cv2.imwrite(op.join(save_dir, "{}_recover_kp.png".format(key)),  img_c)
+            cv2.imwrite(op.join(save_dir, "{}_recover_kp.png".format(key)), img_c)
+
+            box_sizes = [polygon.max(0) - polygon.min(0) for polygon in polygons]
+            fig = plt.figure(trans_info.img_path)
+            pil_img = Image.open(trans_info.img_path)
+            plt.imshow(pil_img)
+            visualize_box(centers, box_sizes)
+            plt.savefig(op.join(save_dir, "{}_box_kp.png".format(key)))
+            plt.close(fig)
+
 
 
 

@@ -17,8 +17,6 @@ from PIL import Image
 from torchvision.transforms import transforms
 import torchvision.transforms.functional as F
 from utils import image
-from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_ae_groups
-
 
 TransInfo = namedtuple('TransInfo', ['img_path', 'img_size', 'flipped_flag'])
 
@@ -63,17 +61,8 @@ class CommonTransforms(object):
 
             # handle center
             centers = [polygon.mean(0).astype(np.int32) for polygon in polygons]
-            # handle box size
-            box_sizes = [tuple(polygon.max(0) - polygon.min(0)) for polygon in polygons]
 
-            cls_mask = generate_cls_mask((self._num_cls, self._input_size[0], self._input_size[1]), centers, cls_ids, box_sizes, strategy="smoothing")
-            kp_mask = generate_kp_mask(self._input_size, polygons)
-            ae_groups = generate_ae_groups(centers, polygons)
-
-            cls_tensor = torch.from_numpy(cls_mask)
-            kp_tensor = torch.from_numpy(kp_mask)
-
-            label = (cls_tensor, kp_tensor, ae_groups)
+            label = (cls_ids, centers, polygons)
 
         return input_tensor, label, TransInfo(img_path, img_size, False)
 
@@ -104,12 +93,15 @@ class TrainTransforms(CommonTransforms):
             pil_img = transforms.ColorJitter(brightness=0.5, contrast=0.5, hue=0.5)(pil_img)
             img = np.asarray(pil_img)
         input_tensor, label, _ = super().__call__(img, label, img_path)
-        flipped_flag = self._with_flip and np.random.randint(0, 2) == 0
+        flipped_flag = self._with_flip# and np.random.randint(0, 2) == 0
 
         if flipped_flag:
             input_tensor = torch.flip(input_tensor, [2])
             if label is not None:
-                label = (torch.flip(label[0], [2]), torch.flip(label[1], [2]), label[2])
+                cls_ids, centers, polygons = label
+                for c_i in range(len(centers)):
+                    centers[c_i][1] = self._input_size[1] - centers[c_i][1] - 1
+                    polygons[c_i][:, 1] = self._input_size[1] - polygons[c_i][:, 1] - 1
 
         return input_tensor, label, TransInfo(img_path, img_size, flipped_flag)
 

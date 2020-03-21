@@ -225,7 +225,6 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, de
         inputs, targets, infos = train_data
         # to device
         inputs = inputs.to(device)
-        targets = (targets[0].to(device), targets[1].to(device), targets[2])
         # forward the models and loss
         outputs = model(inputs)
         loss, loss_stats = loss_fn(outputs, targets)

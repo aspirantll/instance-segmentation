@@ -73,3 +73,23 @@ def visualize_mask(mask):
         img[:, :, i] = color_mask[i]
     ax.imshow(np.dstack((img, mask * 0.5)))
 
+
+def visualize_box(centers, box_sizes, center_color='.r'):
+    ax = plt.gca()
+    polygons = []
+    color = []
+    for center, box_size in zip(centers, box_sizes):
+        c = (np.random.random((1, 3)) * 0.6 + 0.4).tolist()[0]
+        w, h = box_size//2
+        c_w, c_h = center
+        plt.plot(c_w, c_h, center_color)
+        polygons.append(Polygon(np.array([[c_w - w, c_h - h],
+                                          [c_w - w, c_h + h],
+                                          [c_w + w, c_h + h],
+                                          [c_w + w, c_h - h]]).reshape(-1, 2)))
+        color.append(c)
+
+    p = PatchCollection(polygons, facecolor=color, linewidths=0, alpha=0.4)
+    ax.add_collection(p)
+    p = PatchCollection(polygons, facecolor='none', edgecolors=color, linewidths=2)
+    ax.add_collection(p)

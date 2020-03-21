@@ -64,28 +64,33 @@ def draw_umich_gaussian(heatmap, center, radius, k=1):
     return heatmap
 
 
-def generate_cls_mask(target_size, cls_locations, cls_ids, box_sizes=None, strategy="one-hot"):
+def generate_cls_mask(target_size, cls_locations_list, cls_ids_list, box_sizes_list=None, strategy="one-hot"):
     """
     generate the cls mask, the pixel is (w,h)
-    :param target_size: tuple(h, w, c)
-    :param cls_locations: list n * 2
-    :param cls_ids: list n * 1
-    :param box_sizes: list n * 2
+    :param target_size: tuple(b, h, w, c)
+    :param cls_locations_list: list n * 2
+    :param cls_ids_list: list n * 1
+    :param box_sizes_list: list n * 2
     :param strategy: smoothing, one-hot
-    :return: c * h * w
+    :return: b * c * h * w
     """
+    b, c, h, w = target_size
     target_mask = np.zeros(target_size, dtype=np.float32)
-    for i in range(len(cls_locations)):
-        cls_location = cls_locations[i]
-        cls_id = cls_ids[i]
-        if strategy == "one-hot":
-            target_mask[cls_id, cls_location[0], cls_location[1]] = 1
-        elif strategy == "smoothing":
-            box_size = box_sizes[i]
-            radius = int(max(0, gaussian_radius(box_size)))
-            target_mask[cls_id] = draw_umich_gaussian(target_mask[cls_id], cls_location, radius)
-        else:
-            raise ValueError("invalid strategy:{}".format(strategy))
+    for b_i in range(b):
+        cls_locations = cls_locations_list[b_i]
+        cls_ids = cls_ids_list[b_i]
+        box_sizes = box_sizes_list[b_i]
+        for i in range(len(cls_locations)):
+            cls_location = cls_locations[i]
+            cls_id = cls_ids[i]
+            if strategy == "one-hot":
+                target_mask[b_i, cls_id, cls_location[0], cls_location[1]] = 1
+            elif strategy == "smoothing":
+                box_size = box_sizes[i]
+                radius = int(max(0, gaussian_radius(box_size)))
+                target_mask[b_i, cls_id] = draw_umich_gaussian(target_mask[b_i, cls_id], cls_location, radius)
+            else:
+                raise ValueError("invalid strategy:{}".format(strategy))
     return target_mask
 
 
@@ -104,12 +109,3 @@ def generate_kp_mask(target_size, polygons, strategy="one-hot"):
                 target_mask[pixel[0], pixel[1]] = 1
     return np.expand_dims(target_mask, axis=0)
 
-
-def generate_ae_groups(centers, polygons):
-    """
-    generate the ae mask
-    :param polygons: list() n * m * 2
-    :param centers: list() n * 2
-    :return: list [center, polygons]
-    """
-    return (centers, polygons)
