@@ -17,11 +17,54 @@ import torch.nn as nn
 
 import numpy as np
 
-from utils.target_generator import generate_cls_mask
+from utils.target_generator import generate_cls_mask, generate_kp_mask
 
 
 def zero_tensor(device):
     return torch.tensor(0, dtype=torch.float32).to(device)
+
+
+def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum"):
+    """
+    Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+        alpha: (optional) Weighting factor in range (0,1) to balance
+                positive vs negative examples. Default = -1 (no weighting).
+        gamma: Exponent of the modulating factor (1 - p_t) to
+               balance easy vs hard examples.
+        reduction: 'none' | 'mean' | 'sum'
+                 'none': No reduction will be applied to the output.
+                 'mean': The output will be averaged.
+                 'sum': The output will be summed.
+    Returns:
+        Loss tensor with the reduction option applied.
+    """
+    p = inputs
+    ce_loss = F.binary_cross_entropy_with_logits(
+        inputs, targets, reduction="none"
+    )
+    pos_p_t = (1 - p) * targets
+    neg_p_t = p * (1 - targets)
+    pos_loss = ce_loss * (pos_p_t ** gamma)
+    neg_loss = ce_loss * (neg_p_t ** gamma)
+
+    if alpha >= 0:
+        pos_loss = alpha * pos_loss
+        neg_loss = (1 - alpha) * neg_loss
+
+    if reduction == "mean":
+        pos_loss = pos_loss.mean()
+        neg_loss = neg_loss.mean()
+    elif reduction == "sum":
+        pos_loss = pos_loss.sum()
+        neg_loss = neg_loss.sum()
+
+    return pos_loss, neg_loss
 
 
 def generalize_mean(tensor, dim, p=-2, keepdim=False):
@@ -109,6 +152,42 @@ class WHDLoss(object):
         return (1 - self._alpha) * term_2, self._alpha * term_1
 
 
+class KPFocalLoss(object):
+
+    def __init__(self, device, alpha=0.2, beta=2, epsilon=1e-6):
+        self._device = device
+        self._alpha = alpha
+        self._beta = beta
+        self._epsilon = epsilon
+        self.loss_normalizer = 1  # initialize with any reasonable #fg that's not too small
+        self.loss_normalizer_momentum = 0.9
+
+    def get_loss_names(self):
+        return ["kp_pos", "kp_neg"]
+
+    def __call__(self, hm_kp, targets):
+        # prepare step
+        b, c, h, w = hm_kp.shape
+        hm_kp = torch.sigmoid(hm_kp)
+        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
+        _, _, polygons_list = targets
+        # generate the kp mask
+        kp_mask = generate_kp_mask((b, c, h, w), polygons_list, strategy="one-hot")
+        kp_mask = torch.from_numpy(kp_mask).to(self._device)
+        pos_loss, neg_loss = sigmoid_focal_loss(hm_kp, kp_mask, self._alpha, self._beta, reduction="None")
+
+        num_pos = kp_mask.float().sum((1, 2, 3))
+
+        loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + \
+                          (1 - self.loss_normalizer_momentum) * num_pos
+        self.loss_normalizer = loss_normalizer.mean()
+
+        pos_loss = pos_loss.sum((1, 2, 3)) / torch.clamp_min(loss_normalizer, 1)
+        neg_loss = neg_loss.sum((1, 2, 3)) / torch.clamp_min(loss_normalizer, 1)
+
+        return pos_loss.mean(), neg_loss.mean()
+
+
 class FocalLoss(object):
 
     def __init__(self, device, alpha=2, beta=4, epsilon=1e-6):
@@ -116,6 +195,8 @@ class FocalLoss(object):
         self._alpha = alpha
         self._beta = beta
         self._epsilon = epsilon
+        self.loss_normalizer = 100  # initialize with any reasonable #fg that's not too small
+        self.loss_normalizer_momentum = 0.9
 
     def get_loss_names(self):
         return ["cls_pos", "cls_neg"]
@@ -131,21 +212,21 @@ class FocalLoss(object):
         cls_mask = generate_cls_mask(hm_cls.shape, centers_list, cls_ids_list, box_sizes, strategy="smoothing")
         cls_mask = torch.from_numpy(cls_mask).to(self._device)
 
-        pos_mask = cls_mask.eq(1)
-        neg_mask = cls_mask.lt(1)
+        pos_mask = cls_mask.eq(1).float()
 
-        num_pos = pos_mask.float().sum()
+        pos_loss, neg_loss = sigmoid_focal_loss(hm_cls, pos_mask, -1, self._alpha, reduction="None")
+        # weight the negative loss
+        neg_loss = torch.pow(1 - cls_mask, self._beta) * neg_loss
 
-        pos_hm = hm_cls[pos_mask]
-        neg_hm = hm_cls[neg_mask]
+        num_pos = pos_mask.sum((1, 2, 3))
+        loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + \
+                          (1 - self.loss_normalizer_momentum) * num_pos
+        self.loss_normalizer = loss_normalizer.mean()
 
-        pos_loss = torch.log(pos_hm) * torch.pow(1 - pos_hm, self._alpha)
-        neg_loss = torch.log(1 - neg_hm) * torch.pow(neg_hm, self._alpha) * torch.pow(1 - cls_mask[neg_mask], self._beta)
+        pos_loss = pos_loss.sum((1, 2, 3)) / torch.clamp_min(loss_normalizer, 1)
+        neg_loss = neg_loss.sum((1, 2, 3)) / torch.clamp_min(loss_normalizer, 1)
 
-        pos_loss = - pos_loss.sum() / max(1, num_pos)
-        neg_loss = - neg_loss.sum() / max(1, num_pos)
-
-        return pos_loss, neg_loss
+        return pos_loss.mean(), neg_loss.mean()
 
 
 class AELoss(object):

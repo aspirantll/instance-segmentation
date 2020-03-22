@@ -8,6 +8,7 @@ this code base on
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from math import log
 
 
 class DownsamplerBlock (nn.Module):
@@ -165,11 +166,14 @@ class ERFNet(nn.Module):
         return out
 
     def init_weight(self):
-        def init_model_weights(layers, method="xavier"):
+        def init_model_weights(layers, method="xavier", std=0.01, f=False, pi=0.01):
             """
             init the weights for model
             :param layers:
             :param method: kaiming, xavier
+            :param std: for normalize
+            :param f: use focal loss
+            :param pi: focal loss, foreground/background
             :return:
             """
             for m in layers.modules():
@@ -181,11 +185,16 @@ class ERFNet(nn.Module):
                     elif method == "uniform":
                         torch.nn.init.uniform_(m.weight)
                     else:
-                        torch.nn.init.normal_(m.weight, std=0.2)
+                        torch.nn.init.normal_(m.weight, std=std)
 
                     if m.bias is not None:
                         torch.nn.init.constant_(m.bias, 0)
+            if f:
+                layers.output_conv.bias.fill_(-log((1-pi)/pi))
 
-        for head in self.heads:
-            decoder = self.__getattr__(head)
-            init_model_weights(decoder, "kaiming")
+        # hm_cls
+        init_model_weights(self.hm_cls, method="normal", std=0.01)
+        # hm_kp
+        init_model_weights(self.hm_kp, method="normal", std=0.01)
+
+

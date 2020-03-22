@@ -16,3 +16,4 @@ FocalLoss = loss.FocalLoss
 WHDLoss = loss.WHDLoss
 AELoss = loss.AELoss
 ComposeLoss = loss.ComposeLoss
+KPFocalLoss = loss.KPFocalLoss

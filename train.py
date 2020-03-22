@@ -20,7 +20,7 @@ from torchsummary import summary
 from concurrent.futures import ThreadPoolExecutor
 
 import data
-from models import ERFNet, ComposeLoss, FocalLoss, WHDLoss, AELoss
+from models import ERFNet, ComposeLoss, FocalLoss, WHDLoss, AELoss, KPFocalLoss
 from utils.tranform import TrainTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
@@ -59,7 +59,7 @@ parser.add_argument("--checkpoint_span", help="save weights when epoch can div t
 parser.add_argument("--pretrained_weights", dest="pretrained_weights", default=None, type=str)
 parser.add_argument("--focal_alpha", dest="focal_alpha", default=2, type=int)
 parser.add_argument("--focal_beta", dest="focal_beta", default=4, type=int)
-parser.add_argument("--whd_alpha", dest="whd_alpha", default=0.8, type=float)
+parser.add_argument("--whd_alpha", dest="whd_alpha", default=0.5, type=float)
 parser.add_argument("--whd_beta", dest="whd_beta", default=2, type=int)
 parser.add_argument("--ae_alpha", dest="ae_alpha", default=0.5, type=float)
 parser.add_argument("--ae_beta", dest="ae_beta", default=1, type=int)
@@ -136,7 +136,7 @@ def get_optimizer(model, args):
 
 def init_loss_fn():
     cls_loss_fn = FocalLoss(device, alpha=args.focal_alpha, beta=args.focal_beta)
-    kp_loss_fn = WHDLoss(device, alpha=args.whd_alpha, beta=args.whd_beta)
+    kp_loss_fn = KPFocalLoss(device, alpha=args.whd_alpha, beta=args.whd_beta)
     ae_loss_fn = AELoss(device, alpha=args.ae_alpha, beta=args.ae_beta, delta=args.ae_delta)
     return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn)
 

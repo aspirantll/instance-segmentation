@@ -94,18 +94,25 @@ def generate_cls_mask(target_size, cls_locations_list, cls_ids_list, box_sizes_l
     return target_mask
 
 
-def generate_kp_mask(target_size, polygons, strategy="one-hot"):
+def generate_kp_mask(target_size, polygons_list, strategy="one-hot"):
     """
     generate the kp mask
-    :param target_size: tuple(h, w)
-    :param polygons: list(ndarray(n*2))
+    :param target_size: tuple(b, c, h, w)
+    :param polygons_list: list(list(ndarray(n*2)))
     :param strategy: smoothing, one-hot
-    :return: h * w
+    :return: b* 1 * h * w
     """
+    b, c, h, w = target_size
+    assert c == 1
+    assert b == len(polygons_list)
     target_mask = np.zeros(target_size, dtype=np.float32)
-    for polygon in polygons:
-        if strategy == "one-hot":
-            for pixel in polygon:
-                target_mask[pixel[0], pixel[1]] = 1
-    return np.expand_dims(target_mask, axis=0)
+    for b_i in range(b):
+        polygons = polygons_list[b_i]
+        for polygon in polygons:
+            if strategy == "one-hot":
+                for pixel in polygon:
+                    target_mask[b_i, 0, pixel[0], pixel[1]] = 1
+            else:
+                raise ValueError("invalid strategy:{}".format(strategy))
+    return target_mask
 
