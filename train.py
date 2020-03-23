@@ -271,7 +271,7 @@ def train():
                                            phase="train", transforms=transforms)
 
     # initialize model, optimizer, loss_fn
-    model = ERFNet(args.num_classes, fixed_parts=None)
+    model = ERFNet(args.num_classes, fixed_parts=["encoder"])
     start_epoch, best_loss = load_state_dict(model, args.save_dir, args.pretrained_weights)
     model = model.to(device)
     if args.debug:

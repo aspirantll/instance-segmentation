@@ -18,6 +18,7 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon
 from PIL import Image
 import numpy as np
+import seaborn as sns
 
 
 def visualize_instance(instances):
@@ -93,3 +94,8 @@ def visualize_box(centers, box_sizes, center_color='.r'):
     ax.add_collection(p)
     p = PatchCollection(polygons, facecolor='none', edgecolors=color, linewidths=2)
     ax.add_collection(p)
+
+
+def visualize_hm(hm):
+    sns.set()
+    sns.heatmap(hm)

@@ -102,16 +102,16 @@ if __name__== "__main__":
     data_dir = r"C:\data\cityscapes"
     save_dir = r"C:\data\temp"
     data_type = "cityscapes"
-    batch_size = 2
+    batch_size = 1
     phase = "train"
     input_size = (512, 512)
-    num_cls = 19
+    num_cls = 14
     import os.path as op
     from utils.tranform import TrainTransforms
     from PIL import Image
     import cv2
     from matplotlib import pyplot as plt
-    from utils.visualize import visualize_box
+    from utils.visualize import visualize_box, visualize_hm
     import torchvision.transforms.functional as F
 
     transforms = TrainTransforms(input_size, num_cls, with_flip=True)
@@ -120,8 +120,27 @@ if __name__== "__main__":
     print("length:", len(data_loader))
     for iter_id, train_data in enumerate(data_loader):
         inputs = train_data[0]
-        _, centers_list, polygons_list = train_data[1]
+        cls_ids_list, centers_list, polygons_list = train_data[1]
         trans_infos = train_data[2]
+
+        from utils.target_generator import generate_cls_mask, generate_kp_mask
+        box_sizes = [[polygon.max(0) - polygon.min(0) for polygon in polygons] for polygons in polygons_list]
+        cls_mask = generate_cls_mask((1, num_cls, input_size[0], input_size[1]), centers_list, cls_ids_list, box_sizes,
+                                     strategy="smoothing")
+        for j in range(num_cls):
+            mask_mat = cls_mask[0, j]
+            if mask_mat.sum() > 0:
+                fig = plt.figure("cls_{}_{}".format(iter_id, j))
+                visualize_hm(mask_mat)
+                plt.savefig(op.join(save_dir, "{}_{}_cls.png".format(iter_id, j)))
+                plt.close(fig)
+
+        kp_mask = generate_kp_mask((1, 1, input_size[0], input_size[1]), polygons_list)
+        fig = plt.figure("kp_{}".format(iter_id))
+        visualize_hm(kp_mask[0, 0])
+        plt.savefig(op.join(save_dir, "{}_kp.png".format(iter_id)))
+        plt.close(fig)
+
         for i in range(inputs.shape[0]):
             trans_info = trans_infos[i]
             centers = centers_list[i]
@@ -137,13 +156,16 @@ if __name__== "__main__":
                                       color=(255, 0, 0))
             cv2.imwrite(op.join(save_dir, "{}_recover_kp.png".format(key)), img_c)
 
-            box_sizes = [polygon.max(0) - polygon.min(0) for polygon in polygons]
+            box_size = box_sizes[i]
             fig = plt.figure(trans_info.img_path)
             pil_img = Image.open(trans_info.img_path)
             plt.imshow(pil_img)
-            visualize_box(centers, box_sizes)
+            visualize_box(centers, box_size)
             plt.savefig(op.join(save_dir, "{}_box_kp.png".format(key)))
             plt.close(fig)
+
+
+
 
 
 
