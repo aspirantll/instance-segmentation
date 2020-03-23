@@ -44,7 +44,7 @@ def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum"):
     Returns:
         Loss tensor with the reduction option applied.
     """
-    p = inputs
+    p = torch.sigmoid(inputs)
     ce_loss = F.binary_cross_entropy_with_logits(
         inputs, targets, reduction="none"
     )
@@ -154,12 +154,12 @@ class WHDLoss(object):
 
 class KPFocalLoss(object):
 
-    def __init__(self, device, alpha=0.2, beta=2, epsilon=1e-6):
+    def __init__(self, device, alpha=0.2, beta=2, epsilon=1e-6, init_loss_normalizer=100):
         self._device = device
         self._alpha = alpha
         self._beta = beta
         self._epsilon = epsilon
-        self.loss_normalizer = 1  # initialize with any reasonable #fg that's not too small
+        self.loss_normalizer = init_loss_normalizer  # initialize with any reasonable #fg that's not too small
         self.loss_normalizer_momentum = 0.9
 
     def get_loss_names(self):
@@ -168,8 +168,8 @@ class KPFocalLoss(object):
     def __call__(self, hm_kp, targets):
         # prepare step
         b, c, h, w = hm_kp.shape
-        hm_kp = torch.sigmoid(hm_kp)
-        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
+        hm_pred = torch.sigmoid(hm_kp)
+        print("kp mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
         _, _, polygons_list = targets
         # generate the kp mask
         kp_mask = generate_kp_mask((b, c, h, w), polygons_list, strategy="one-hot")
@@ -190,12 +190,12 @@ class KPFocalLoss(object):
 
 class FocalLoss(object):
 
-    def __init__(self, device, alpha=2, beta=4, epsilon=1e-6):
+    def __init__(self, device, alpha=2, beta=4, epsilon=1e-6, init_loss_normalizer=100):
         self._device = device
         self._alpha = alpha
         self._beta = beta
         self._epsilon = epsilon
-        self.loss_normalizer = 100  # initialize with any reasonable #fg that's not too small
+        self.loss_normalizer = init_loss_normalizer  # initialize with any reasonable #fg that's not too small
         self.loss_normalizer_momentum = 0.9
 
     def get_loss_names(self):
@@ -203,8 +203,8 @@ class FocalLoss(object):
 
     def __call__(self, hm_cls, targets):
         # prepare step
-        hm_cls = torch.sigmoid(hm_cls)
-        print("cls mean:{}, max:{}, min:{}".format(hm_cls.mean().item(), hm_cls.max().item(), hm_cls.min().item()))
+        hm_pred = torch.sigmoid(hm_cls)
+        print("cls mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
         cls_ids_list, centers_list, polygons_list = targets
         # handle box size
         box_sizes = [[tuple(polygon.max(0) - polygon.min(0)) for polygon in polygons] for polygons in polygons_list]
@@ -237,7 +237,7 @@ class AELoss(object):
         self._beta = beta
 
     def get_loss_names(self):
-        return ["ae_push", "ae_pull", "ae_center"]
+        return ["ae_pull", "ae_push", "ae_center"]
 
     def __call__(self, hm_ae, targets):
         """

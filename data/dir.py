@@ -11,9 +11,9 @@ __version__ = "1.0.0"
 
 import os
 from torch.utils import data
-from data.dataset import DatasetBuilder, load_rgb_image
+from data.dataset import DatasetBuilder
 from utils.tranform import CommonTransforms
-
+from utils.image import load_rgb_image
 
 
 class DirDataset(data.Dataset):
@@ -24,7 +24,6 @@ class DirDataset(data.Dataset):
         # save the parameters
         self._data_dir = data_dir
         self._input_size=input_size
-        self._scale = 4
         if transforms is not None:
             self._transforms = transforms  # ADDED THIS
         else:
@@ -40,7 +39,7 @@ class DirDataset(data.Dataset):
         path = os.path.join(self._data_dir, self.imgs[index])
         input_img = load_rgb_image(path)
 
-        input_img, _, trans_info = self._transforms(input_img)
+        input_img, _, trans_info = self._transforms(input_img, img_path=path)
         return input_img, trans_info
 
     def __len__(self):

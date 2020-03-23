@@ -16,7 +16,9 @@ from torch.utils import data
 from pycocotools import mask
 from utils import image
 from utils.tranform import CommonTransforms
-from .dataset import DatasetBuilder, load_rgb_image
+from .dataset import DatasetBuilder
+from utils.image import load_rgb_image
+
 
 skip_cls_ids = [12, 26, 29, 30, 45, 66, 68, 69, 71, 83]
 num_cls = 80

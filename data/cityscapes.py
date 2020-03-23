@@ -5,7 +5,8 @@ from torch.utils.data import Dataset
 from collections import namedtuple
 
 from utils.tranform import CommonTransforms
-from .dataset import DatasetBuilder, load_rgb_image
+from .dataset import DatasetBuilder
+from utils.image import load_rgb_image
 
 
 #--------------------------------------------------------------------------------

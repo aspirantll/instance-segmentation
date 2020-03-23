@@ -10,17 +10,6 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import abc
-import cv2
-
-
-def load_rgb_image(img_path):
-    input_img = cv2.imread(img_path)
-    if input_img is None:
-        raise ValueError("the img load error:{}".format(img_path))
-    else:
-        input_img = cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB)
-    return input_img
-
 
 def is_train_phase(phase):
     return phase == "train"

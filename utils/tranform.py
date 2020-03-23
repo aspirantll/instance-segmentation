@@ -66,11 +66,26 @@ class CommonTransforms(object):
 
         return input_tensor, label, TransInfo(img_path, img_size, False)
 
-    def transform_pixel(self, pixel, info):
-        return pixel
+    def transform_pixel(self, pixels, info):
+        anti_pixels = pixels.reshape(-1, 2)
+        img_size = info.img_size
+        # anti resize
+        size_flag, origin_size, input_size = self.regular_size(img_size)
+        anti_transform = image.get_affine_transform(origin_size, input_size, inv=True)
+        if size_flag:
+            anti_pixels = image.apply_affine_transform(anti_pixels[:, ::-1], anti_transform, img_size[::-1])
+        else:
+            anti_pixels = image.apply_affine_transform(anti_pixels, anti_transform, img_size)[:, ::-1]
+        return anti_pixels
 
     def transform_image(self, img, info):
-        return img
+        img_size = info.img_size
+        size_flag, origin_size, input_size = self.regular_size(img_size)
+
+        # anti resize
+        anti_transform = image.get_affine_transform(origin_size, input_size, inv=True)
+        anti_img = cv2.warpAffine(img, anti_transform, img_size[::-1])
+        return anti_img
 
 
 class TrainTransforms(CommonTransforms):
@@ -112,29 +127,16 @@ class TrainTransforms(CommonTransforms):
         :return: pixels' format (w,h)
         """
         anti_pixels = pixels.reshape(-1, 2)
-        img_size = info.img_size
-        size_flag, origin_size, input_size = self.regular_size(img_size)
         # anti flip
         if info.flipped_flag:
             anti_pixels[:, 1] = self._input_size[1] - anti_pixels[:, 1] - 1
-        # anti resize
-        anti_transform = image.get_affine_transform(origin_size, input_size, inv=True)
-        if size_flag:
-            anti_pixels = image.apply_affine_transform(anti_pixels[:, ::-1], anti_transform, img_size[::-1])
-        else:
-            anti_pixels = image.apply_affine_transform(anti_pixels, anti_transform, img_size)[:, ::-1]
-        return anti_pixels
+
+        return super().transform_pixel(anti_pixels, info)
 
     def transform_image(self, img, info):
-        img_size = info.img_size
         # anti flip
         if info.flipped_flag:
             img = img[:, ::-1, :]
-        size_flag, origin_size, input_size = self.regular_size(img_size)
 
-        # anti resize
-        anti_transform = image.get_affine_transform(origin_size, input_size, inv=True)
-        anti_img = cv2.warpAffine(img, anti_transform, img_size[::-1])
-        return anti_img
-
+        return super().transform_image(img, info)
 

@@ -59,7 +59,7 @@ parser.add_argument("--checkpoint_span", help="save weights when epoch can div t
 parser.add_argument("--pretrained_weights", dest="pretrained_weights", default=None, type=str)
 parser.add_argument("--focal_alpha", dest="focal_alpha", default=2, type=int)
 parser.add_argument("--focal_beta", dest="focal_beta", default=4, type=int)
-parser.add_argument("--whd_alpha", dest="whd_alpha", default=0.5, type=float)
+parser.add_argument("--whd_alpha", dest="whd_alpha", default=0.6, type=float)
 parser.add_argument("--whd_beta", dest="whd_beta", default=2, type=int)
 parser.add_argument("--ae_alpha", dest="ae_alpha", default=0.5, type=float)
 parser.add_argument("--ae_beta", dest="ae_beta", default=1, type=int)
@@ -243,7 +243,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, de
             if l in loss_stats:
                 avg_loss_states[l].update(
                     loss_stats[l].item(), inputs.size(0))
-                log_item = log_item + '|{}:{:.4f}'.format(l, loss_stats[l].item())
+                log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
                 logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
         logger.close_summary_writer()
         running_loss.update(loss.item(), inputs.size(0))
@@ -271,7 +271,7 @@ def train():
                                            phase="train", transforms=transforms)
 
     # initialize model, optimizer, loss_fn
-    model = ERFNet(args.num_classes, fixed_parts=["encoder"])
+    model = ERFNet(args.num_classes, fixed_parts=None)
     start_epoch, best_loss = load_state_dict(model, args.save_dir, args.pretrained_weights)
     model = model.to(device)
     if args.debug:

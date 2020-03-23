@@ -99,24 +99,13 @@ def clamp_pixel(pixel, size):
     return pixel[:2]
 
 
-def preprocess(path, input_size, scale):
-    img = cv2.imread(path)
-    # aug info
-    img_size = np.array(img.shape[:2])[::-1]
-    center = img_size // 2
-    transform_matrix = get_affine_transform(center, img_size, input_size)
-    input_img = cv2.warpAffine(img, transform_matrix, tuple(input_size))
-    # to pil image
-    pil_img = Image.fromarray(cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB), mode="RGB")
-    # to tensor
-    input_tensor = transforms.ToTensor()(pil_img)
-    # normalize
-    input_tensor = transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))(input_tensor)
-    # compose the infos
-    infos = {"center": center, "cropped_size": img_size, "img_path": path, "input_size": input_size,
-             "img_size": img_size, "cropped": False, "flipped": False, "scale": scale}
-
-    return input_tensor, infos
+def load_rgb_image(img_path):
+    input_img = cv2.imread(img_path)
+    if input_img is None:
+        raise ValueError("the img load error:{}".format(img_path))
+    else:
+        input_img = cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB)
+    return input_img
 
 
 def mask2poly(mask, threshold=0.5):

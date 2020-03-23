@@ -140,7 +140,7 @@ class Decoder (nn.Module):
 
 
 class ERFNet(nn.Module):
-    def __init__(self, num_classes, fixed_parts=("encoder")):  # use encoder to pass pretrained encoder
+    def __init__(self, num_classes, fixed_parts=None):  # use encoder to pass pretrained encoder
         super().__init__()
         self.heads = {
             "hm_cls": num_classes,
@@ -193,8 +193,8 @@ class ERFNet(nn.Module):
                 layers.output_conv.bias.fill_(-log((1-pi)/pi))
 
         # hm_cls
-        init_model_weights(self.hm_cls, method="normal", std=0.01)
+        init_model_weights(self.hm_cls, method="normal", std=0.01, pi=1e-6)
         # hm_kp
-        init_model_weights(self.hm_kp, method="normal", std=0.01)
+        init_model_weights(self.hm_kp, method="normal", std=0.01, pi=1e-3)
 
 
