@@ -103,9 +103,8 @@ def generate_kp_mask(target_size, polygons_list, strategy="one-hot"):
     :return: b* 1 * h * w
     """
     b, c, h, w = target_size
-    assert c == 1
     assert b == len(polygons_list)
-    target_mask = np.zeros(target_size, dtype=np.float32)
+    target_mask = np.zeros((b, 1, h, w), dtype=np.float32)
     for b_i in range(b):
         polygons = polygons_list[b_i]
         for polygon in polygons:
@@ -115,4 +114,80 @@ def generate_kp_mask(target_size, polygons_list, strategy="one-hot"):
             else:
                 raise ValueError("invalid strategy:{}".format(strategy))
     return target_mask
+
+
+inf = 65535
+offsets = np.array([[[-1, -1], [0, -1], [1, -1]],
+                   [[-1, 0], [0, 0], [1, 0]],
+                   [[-1, 1], [0, 1], [1, 1]]], dtype=np.float32)
+mask_1 = np.array([[1, 1, 1],
+                   [1, 1, 0],
+                   [0, 0, 0]], dtype=np.float32)
+mask_2 = np.array([[0, 0, 0],
+                   [0, 1, 1],
+                   [0, 0, 0]], dtype=np.float32)
+mask_3 = np.array([[1, 1, 1],
+                   [1, 1, 0],
+                   [0, 0, 0]], dtype=np.float32)
+mask_4 = np.array([[0, 0, 0],
+                   [0, 1, 1],
+                   [1, 1, 1]], dtype=np.float32)
+
+
+def min_distance_pooling(rows, mask, ascent=True):
+    """
+    select the min distance from neighbors on image
+    :param rows: 3 * (n + 2) * 2, ndarray
+    :param mask: 3 * 3, ndarray
+    :param ascent: true-from left to right. false-from right to left
+    :return: 3 * n
+    """
+    assert rows.shape[0] == mask.shape[0] == mask.shape[1] == 3
+    n = rows.shape[1] - 2
+
+    index_seq = range(1, n+1) if ascent else range(n, 0, -1)
+    for ind in index_seq:
+        sub_row = rows[:, ind-1: ind+2, :]
+        neighbors = sub_row + offsets
+        neighbors_distance = np.sqrt(np.sum(neighbors ** 2, axis=2))
+        nonzero_indexes = mask.nonzero()
+        selected_distance = neighbors_distance[nonzero_indexes]
+        min_index = selected_distance.argmin()
+        rows[1, ind, :] = neighbors[nonzero_indexes[0][min_index], nonzero_indexes[1][min_index], :]
+
+
+def sdf_pass(grid, mask_one, mask_two, ascent=True):
+    n = grid.shape[0] - 2
+    index_seq = range(1, n+1) if ascent else range(n, 0, -1)
+    for ind in index_seq:
+        min_distance_pooling(grid[ind-1 : ind+2, :, :], mask_one)
+        min_distance_pooling(grid[ind - 1: ind + 2, :, :], mask_two, ascent=False)
+
+
+def generate_sdf(mat):
+    # prepare the data for min-pooling
+    h, w = mat.shape
+    signal_grid = ((1 - mat) * inf)
+    pad_vec_h = np.ones((h, 1), dtype=np.float32) * inf
+    pad_vec_w = np.ones((1, w + 2), dtype=np.float32) * inf
+    padding_grid = np.vstack((pad_vec_w, np.hstack((pad_vec_h, signal_grid, pad_vec_h)), pad_vec_w))
+    grid = np.expand_dims(padding_grid, 2).repeat(2, axis=2)
+    # 8SSDET pass
+    sdf_pass(grid, mask_1, mask_2)
+    sdf_pass(grid, mask_3, mask_4, ascent=False)
+
+    return np.ascontiguousarray(grid[1:h+1, 1:w+1, ::-1], dtype=np.float32)
+
+
+def generate_batch_sdf(batch):
+    sdf_list = []
+    for mat in batch:
+        sdf = generate_sdf(mat[0]).transpose((2, 0, 1))
+        sdf_list.append(np.expand_dims(sdf, 0))
+    return np.vstack(sdf_list)
+
+
+
+
+
 

@@ -7,7 +7,7 @@ from collections import namedtuple
 from utils.tranform import CommonTransforms
 from .dataset import DatasetBuilder
 from utils.image import load_rgb_image
-
+from utils.tensor_util import load_labels
 
 #--------------------------------------------------------------------------------
 # Definitions
@@ -172,20 +172,22 @@ def parse_label_json(label_json):
 
 class CityscapesDataset(Dataset):
 
-    def __init__(self, root, input_size, transforms=None, subset='train'):
+    def __init__(self, root, input_size, transforms=None, subset='train', from_file=False):
+        self._from_file = from_file
+
         self.images_root = os.path.join(root, 'leftImg8bit/')
-        self.labels_root = os.path.join(root, 'gtFine/')
-
         self.images_root += subset
-        self.labels_root += subset
-
         self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.images_root)) for f in
                           fn if is_image(f)]
         self.filenames.sort()
 
-        self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in
-                            fn if is_label(f)]
-        self.filenamesGt.sort()
+        self.preprocess_root = os.path.join(root, 'preprocessed/' + subset)
+        if not self._from_file:
+            self.labels_root = os.path.join(root, 'gtFine/')
+            self.labels_root += subset
+            self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in
+                                fn if is_label(f)]
+            self.filenamesGt.sort()
 
         if transforms is not None:
             self._transforms = transforms  # ADDED THIS
@@ -194,15 +196,18 @@ class CityscapesDataset(Dataset):
 
     def __getitem__(self, index):
         filename = self.filenames[index]
-        filenameGt = self.filenamesGt[index]
-
         img_path = image_path_city(self.images_root, filename)
-        input_img = load_rgb_image(img_path)
+        if self._from_file:
+            data_file = os.path.join(self.preprocess_root, os.path.basename(filename)[:-4]) + ".npy"
+            input_img, label = load_labels(data_file)
+        else:
+            input_img = load_rgb_image(img_path)
 
-        with open(image_path_city(self.labels_root, filenameGt), 'rb') as f:
-            label = parse_label_json(json.load(f))
+            filenameGt = self.filenamesGt[index]
+            with open(image_path_city(self.labels_root, filenameGt), 'rb') as f:
+                label = parse_label_json(json.load(f))
 
-        input_img, label, trans_info = self._transforms(input_img, label, img_path)
+        input_img, label, trans_info = self._transforms(input_img, label, img_path, self._from_file)
         return input_img, label, trans_info
 
     def __len__(self):

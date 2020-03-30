@@ -88,12 +88,18 @@ class Encoder(nn.Module):
             self.layers.append(non_bottleneck_1d(128, 0.3, 16))
 
     def forward(self, input):
+        # save the temp output for skip connection
+        outs = []
         output = self.initial_block(input)
+        outs.append(output.clone())
 
         for layer in self.layers:
             output = layer(output)
+            if isinstance(layer, DownsamplerBlock):
+                outs.append(output.clone())
 
-        return output
+        outs.append(output)
+        return outs
 
 
 class UpsamplerBlock (nn.Module):
@@ -126,10 +132,12 @@ class Decoder (nn.Module):
         self.output_conv = nn.ConvTranspose2d(
             16, num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
 
-    def forward(self, input):
-        output = input
+    def forward(self, inputs):
+        output = inputs.pop()
 
         for layer in self.layers:
+            if isinstance(layer, UpsamplerBlock):
+                output += inputs.pop()
             output = layer(output)
 
         output = self.output_conv(output)
@@ -144,7 +152,7 @@ class ERFNet(nn.Module):
         super().__init__()
         self.heads = {
             "hm_cls": num_classes,
-            "hm_kp": 1,
+            "hm_kp": 2,
             "hm_ae": 1
         }
         self.encoder = Encoder(num_classes)
@@ -162,7 +170,7 @@ class ERFNet(nn.Module):
         out = {}
         for head in self.heads:
             decoder = self.__getattr__(head)
-            out[head] = decoder(output)
+            out[head] = decoder([out.clone() for out in output])
         return out
 
     def init_weight(self):

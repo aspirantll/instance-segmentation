@@ -42,6 +42,7 @@ def collate_fn_with_label(batch):
     batch_inputs = [e for e in zip(*batch)]
     input_tensors = torch.stack(batch_inputs[0])
     labels = [e for e in zip(*batch_inputs[1])]
+    labels[-1] = torch.stack(labels[-1])
     trans_infos = batch_inputs[2]
     return input_tensors, labels, trans_infos
 
@@ -58,7 +59,8 @@ def collate_fn_without_label(batch):
     return input_tensors, trans_infos
 
 
-def get_dataloader(batch_size, dataset_type, data_dir, phase, input_size, transforms=None, ann_file=None, num_workers=1, random=False):
+def get_dataloader(batch_size, dataset_type, data_dir, phase, input_size, transforms=None
+                   , ann_file=None, num_workers=0, random=False, from_file=False):
     """
     initialize the data loader, and then return a data loader
     :param num_workers: worker num
@@ -76,7 +78,7 @@ def get_dataloader(batch_size, dataset_type, data_dir, phase, input_size, transf
     dataset_builder_class = datasetBuildersMap[dataset_type]
     # initialize dataset
     dataset_builder = dataset_builder_class(data_dir, phase, ann_file)
-    dataset = dataset_builder.get_dataset(input_size=input_size, transforms=transforms)
+    dataset = dataset_builder.get_dataset(input_size=input_size, transforms=transforms, from_file=from_file)
     if is_train_phase(phase) or is_val_phase(phase):
         if is_train_phase(phase):
             # initialize sampler
@@ -111,7 +113,7 @@ if __name__== "__main__":
     from PIL import Image
     import cv2
     from matplotlib import pyplot as plt
-    from utils.visualize import visualize_box, visualize_hm
+    from utils.visualize import visualize_box, visualize_hm, visualize_mask
     import torchvision.transforms.functional as F
 
     transforms = TrainTransforms(input_size, num_cls, with_flip=True)
@@ -127,17 +129,25 @@ if __name__== "__main__":
         box_sizes = [[polygon.max(0) - polygon.min(0) for polygon in polygons] for polygons in polygons_list]
         cls_mask = generate_cls_mask((1, num_cls, input_size[0], input_size[1]), centers_list, cls_ids_list, box_sizes,
                                      strategy="smoothing")
-        for j in range(num_cls):
-            mask_mat = cls_mask[0, j]
-            if mask_mat.sum() > 0:
-                fig = plt.figure("cls_{}_{}".format(iter_id, j))
-                visualize_hm(mask_mat)
-                plt.savefig(op.join(save_dir, "{}_{}_cls.png".format(iter_id, j)))
-                plt.close(fig)
+        # for j in range(num_cls):
+        #     mask_mat = cls_mask[0, j]
+        #     if mask_mat.sum() > 0:
+        #         fig = plt.figure("cls_{}_{}".format(iter_id, j))
+        #         visualize_hm(mask_mat)
+        #         plt.savefig(op.join(save_dir, "{}_{}_cls.png".format(iter_id, j)))
+        #         plt.close(fig)
+
+        conf = cls_mask.max((0, 1))
+        fig = plt.figure("cls_{}".format(iter_id))
+        plt.imshow(F.to_pil_image(inputs[0]))
+        visualize_mask(conf)
+        plt.savefig(op.join(save_dir, "{}_cls.png".format(iter_id)))
+        plt.close(fig)
 
         kp_mask = generate_kp_mask((1, 1, input_size[0], input_size[1]), polygons_list)
         fig = plt.figure("kp_{}".format(iter_id))
-        visualize_hm(kp_mask[0, 0])
+        plt.imshow(F.to_pil_image(inputs[0]))
+        visualize_mask(kp_mask[0, 0])
         plt.savefig(op.join(save_dir, "{}_kp.png".format(iter_id)))
         plt.close(fig)
 

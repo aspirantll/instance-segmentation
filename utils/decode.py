@@ -34,7 +34,7 @@ def find_internal_point(kps, default):
             point = (kps[i] + kps[j]) / 2
             if cv2.pointPolygonTest(kps, tuple(point), False) > 0:
                 return point
-    return None
+    return default
 
 
 def topk(mat, k):
@@ -136,7 +136,8 @@ def aug_group(pts, center_loc, rp=80):
     """
     center_loc = center_loc.reshape(-1)
     # convert to polar, then sort by seta
-    polar_pts = cartesian2polar(pts, find_internal_point(pts, center_loc))
+    internal_point = find_internal_point(pts, center_loc)
+    polar_pts = cartesian2polar(pts, internal_point)
     sorted_inds = np.argsort(polar_pts[:, 0])
     sorted_kp = np.array([pts[ind] for ind in sorted_inds])
     # compute distance to center point, then sort
@@ -193,7 +194,7 @@ def draw_kp(kp_mask, transforms, kp_threshold, infos, keyword):
 
 
 def group_kp(hm_kp, hm_ae, transforms, center_indexes, center_cls, center_confs, infos
-             , max_distance=0.4, min_pixels=4, max_delta=10, k=1000):
+             , max_distance=0.5, min_pixels=4, max_delta=10, k=1000):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -238,7 +239,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_indexes, center_cls, center_confs,
     return center_cls, center_confs, center_indexes, kps
 
 
-def decode_output(outs, infos, transforms, kp_th=1000, cls_th=100):
+def decode_output(outs, infos, transforms, kp_th=5000, cls_th=1000):
     """
     decode the model output
     :param outs:
@@ -276,7 +277,10 @@ def decode_output(outs, infos, transforms, kp_th=1000, cls_th=100):
                                                                     k=kp_th)
         for i in range(len(center_indexes)):
             from utils.visualize import visualize_obj_points
+            from matplotlib import pyplot as plt
+            fig = plt.figure(str(i) + info.img_path)
             visualize_obj_points(groups[i], center_indexes[i], info.img_path, i)
+            plt.close(fig)
         # nms
         center_cls, center_confs, center_indexes, groups = nms(center_cls, center_confs, center_indexes, groups,
                                                                info.img_size)

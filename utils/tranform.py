@@ -13,10 +13,11 @@ from collections import namedtuple
 import cv2
 import torch
 import numpy as np
-from PIL import Image
 from torchvision.transforms import transforms
 import torchvision.transforms.functional as F
 from utils import image
+from utils.tensor_util import unitize_redirection
+from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_batch_sdf
 
 TransInfo = namedtuple('TransInfo', ['img_path', 'img_size', 'flipped_flag'])
 
@@ -34,7 +35,7 @@ class CommonTransforms(object):
         input_size = self._input_size[::-1] if size_flag else self._input_size
         return size_flag, origin_size, input_size
 
-    def __call__(self, img, label=None, img_path=None):
+    def __call__(self, img, label=None, img_path=None, from_file=False):
         """
         compose transform the all the transform
         :param img:  rgb and the shape is h*w*c
@@ -43,6 +44,8 @@ class CommonTransforms(object):
         :return:
         """
         img_size = img.shape[:2]
+        if from_file:
+            return img, label, TransInfo(img_path, img_size, False)
         # find the greater axis as the x
         size_flag, origin_size, input_size = self.regular_size(img_size)
         transform_matrix = image.get_affine_transform(origin_size, input_size)
@@ -62,7 +65,11 @@ class CommonTransforms(object):
             # handle center
             centers = [polygon.mean(0).astype(np.int32) for polygon in polygons]
 
-            label = (cls_ids, centers, polygons)
+            kp_mask = generate_kp_mask((1, 1, self._input_size[0], self._input_size[1]), [polygons], strategy="one-hot")
+            kp_vectors = torch.from_numpy(generate_batch_sdf(kp_mask))
+            kp_target = unitize_redirection(kp_vectors)
+            # todo ae mask
+            label = (centers, cls_ids, polygons, kp_target[0])
 
         return input_tensor, label, TransInfo(img_path, img_size, False)
 
@@ -94,7 +101,7 @@ class TrainTransforms(CommonTransforms):
         self._with_flip = with_flip
         self._with_aug_color = with_aug_color
 
-    def __call__(self, img, label=None, img_path=None):
+    def __call__(self, img, label=None, img_path=None, from_file=False):
         """
         compose transform the all the transform
         :param img:  rgb and the shape is h*w*c
@@ -102,21 +109,28 @@ class TrainTransforms(CommonTransforms):
         :param img_path: as the key
         :return:
         """
-        img_size = img.shape[:2]
+        img_size = img.shape[:2] if len(img.shape)==3 else img.shape[2:4]
+        if from_file:
+            input_tensor, label = img, label
+        else:
+            input_tensor, label, _ = super().__call__(img, label, img_path)
+
         if self._with_aug_color and np.random.randint(0, 2) == 0:
-            pil_img = Image.fromarray(img)
+            pil_img = F.to_pil_image(input_tensor)
             pil_img = transforms.ColorJitter(brightness=0.5, contrast=0.5, hue=0.5)(pil_img)
-            img = np.asarray(pil_img)
-        input_tensor, label, _ = super().__call__(img, label, img_path)
-        flipped_flag = self._with_flip# and np.random.randint(0, 2) == 0
+            input_tensor = F.to_tensor(pil_img)
+
+        flipped_flag = self._with_flip and np.random.randint(0, 2) == 0
 
         if flipped_flag:
             input_tensor = torch.flip(input_tensor, [2])
             if label is not None:
-                cls_ids, centers, polygons = label
+                centers, cls_ids, polygons, kp_target = label
                 for c_i in range(len(centers)):
                     centers[c_i][1] = self._input_size[1] - centers[c_i][1] - 1
                     polygons[c_i][:, 1] = self._input_size[1] - polygons[c_i][:, 1] - 1
+                kp_target = torch.flip(kp_target, [2])
+                label = (centers, cls_ids, polygons, kp_target)
 
         return input_tensor, label, TransInfo(img_path, img_size, flipped_flag)
 

@@ -27,7 +27,7 @@ from PIL import Image
 from utils import image
 
 
-# global torch config for training
+# global torch configs for training
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 # Tensor type to use, select CUDA or not
@@ -45,12 +45,11 @@ parser.add_argument("--weights_path", help="the weights path", dest="weights_pat
 parser.add_argument("--test_dir", help="the dir of test", dest="test_dir", type=str)
 parser.add_argument("--test_image", help="the image of test", dest="test_image", type=str)
 parser.add_argument("--batch_size", dest="batch_size", default=32, type=int)
-parser.add_argument("--input_size", dest="input_size", default=512, type=int)
+parser.add_argument("--input_size", dest="input_size", default=(512, 1024), type=tuple)
 parser.add_argument("--seed", dest="seed", default=1, type=int)
 parser.add_argument("--num_classes", dest="num_classes", default=-1, type=int)
 # parse args
 args = parser.parse_args()
-args.input_size = (args.input_size, args.input_size)
 args.dataset = "dir"
 if args.num_classes == -1:
     args.num_classes = data.get_cls_num(args.dataset)
@@ -126,7 +125,7 @@ def test():
 
     if args.test_dir is not None:
         # initialize the dataloader by dir
-        test_dataloader = data.get_dataloader(args.batch_size, args.dataset, args.train_dir,
+        test_dataloader = data.get_dataloader(args.batch_size, args.dataset, args.test_dir,
                                                input_size=args.input_size,
                                                phase="test", transforms=transforms)
         # foreach the images

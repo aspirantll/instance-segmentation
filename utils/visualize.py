@@ -59,7 +59,6 @@ def visualize_kp(kps, color=".r"):
 
 
 def visualize_obj_points(kps, centers, path, suffix, colors=(".r", ".b")):
-    plt.figure(str(suffix) + path)
     img = Image.open(path)
     plt.imshow(img)
     visualize_kp(kps, colors[0])
@@ -98,4 +97,4 @@ def visualize_box(centers, box_sizes, center_color='.r'):
 
 def visualize_hm(hm):
     sns.set()
-    sns.heatmap(hm)
+    sns.heatmap(hm, cmap='rainbow')

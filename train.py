@@ -16,16 +16,16 @@ import torch
 import os
 import time
 import numpy as np
-from torchsummary import summary
 from concurrent.futures import ThreadPoolExecutor
 
 import data
-from models import ERFNet, ComposeLoss, FocalLoss, WHDLoss, AELoss, KPFocalLoss
+from configs import Config
+from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, KPGACLoss, KPLSLoss
 from utils.tranform import TrainTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
 
-# global torch config for training
+# global torch configs for training
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 # Tensor type to use, select CUDA or not
@@ -38,71 +38,54 @@ device = torch.device(device_type)
 print("loading the arguments...")
 parser = argparse.ArgumentParser(description="training")
 # add arguments
-parser.add_argument("--save_dir", help="the dir of saving result", dest="save_dir", required=True, type=str)
-parser.add_argument("--train_dir", help="the dir of dataset for train", dest="train_dir", required=True, type=str)
-parser.add_argument("--val_dir", help="the dir of dataset for validation", dest="val_dir", required=True, type=str)
-parser.add_argument("--batch_size", dest="batch_size", default=32, type=int)
-parser.add_argument("--input_size", dest="input_size", default=512, type=int)
-parser.add_argument("--num_epochs", dest="num_epochs", default=20000, type=int)
-parser.add_argument("--debug", dest="debug", action='store_true', default=False)
-parser.add_argument("--seed", dest="seed", default=1, type=int)
-parser.add_argument("--optimizer", dest="optimizer", default="SGD", type=str)
-parser.add_argument("--dataset", help="set the type of dataset. such as coco, cityscapes", dest="dataset", default="cityscapes",
-                    type=str)
-parser.add_argument("--max_iter", help="max iter for per epoch", dest="max_iter", default=-1,
-                    type=int)
-parser.add_argument("--num_classes", dest="num_classes", default=-1, type=int)
-parser.add_argument("--lr", help="learning rate", dest="lr", default=1e-3, type=float)
-parser.add_argument("--momentum", help="momentum for SGD", dest="momentum", default=0.9, type=float)
-parser.add_argument("--checkpoint_span", help="save weights when epoch can div the checkpoint_span",
-                    dest="checkpoint_span", default=1000, type=int)
-parser.add_argument("--pretrained_weights", dest="pretrained_weights", default=None, type=str)
-parser.add_argument("--focal_alpha", dest="focal_alpha", default=2, type=int)
-parser.add_argument("--focal_beta", dest="focal_beta", default=4, type=int)
-parser.add_argument("--whd_alpha", dest="whd_alpha", default=0.6, type=float)
-parser.add_argument("--whd_beta", dest="whd_beta", default=2, type=int)
-parser.add_argument("--ae_alpha", dest="ae_alpha", default=0.5, type=float)
-parser.add_argument("--ae_beta", dest="ae_beta", default=1, type=int)
-parser.add_argument("--ae_delta", dest="ae_delta", default=2, type=int)
-
-
+parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/train_cfg.yaml", type=str)
 # parse args
 args = parser.parse_args()
-args.input_size = (args.input_size, args.input_size)
-if args.num_classes == -1:
-    args.num_classes = data.get_cls_num(args.dataset)
+
+cfg = Config(args.cfg_path)
+data_cfg = cfg.data
+opt_cfg = cfg.optimizer
+loss_cfg = cfg.loss
+
+if data_cfg.num_classes == -1:
+    data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
+if isinstance(data_cfg.input_size, str):
+    data_cfg.input_size = eval(data_cfg.input_size)
+if isinstance(opt_cfg.lr, str):
+    opt_cfg.lr = eval(opt_cfg.lr)
 
 # validate the arguments
-print("train dir:", args.train_dir)
-if not os.path.exists(args.train_dir):
+print("train dir:", data_cfg.train_dir)
+if not os.path.exists(data_cfg.train_dir):
     raise Exception("the train dir cannot be found.")
-print("val dir:", args.val_dir)
-if not os.path.exists(args.val_dir):
+print("val dir:", data_cfg.val_dir)
+if not os.path.exists(data_cfg.val_dir):
     raise Exception("the val dir cannot be found.")
-print("save dir:", args.save_dir)
-if not os.path.exists(args.save_dir):
-    os.makedirs(args.save_dir)
-if args.dataset not in data.datasetBuildersMap:
+print("save dir:", data_cfg.save_dir)
+if not os.path.exists(data_cfg.save_dir):
+    os.makedirs(data_cfg.save_dir)
+if data_cfg.dataset not in data.datasetBuildersMap:
     raise Exception("the dataset is not accepted.")
 
 # set seed
-np.random.seed(args.seed)
-torch.random.manual_seed(args.seed)
+np.random.seed(cfg.seed)
+torch.random.manual_seed(cfg.seed)
 if use_cuda:
-    torch.cuda.manual_seed_all(args.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
 
-Logger.init_logger(args, type="simple")
+Logger.init_logger(data_cfg, type="simple")
 logger = Logger.get_logger()
 executor = ThreadPoolExecutor(max_workers=3)
 
 
-def save_checkpoint(model_dict, epoch, best_loss, save_dir, iter=None):
+def save_checkpoint(model_dict, epoch, best_loss, save_dir, iter_id=None):
     """
     save the check points
     :param model_dict: the best model
     :param epoch: epoch
     :param best_loss: best loss
     :param save_dir: the checkpoint dir
+    :param iter_id: the index of iter
     :return:
     """
     checkpoint = {
@@ -110,34 +93,35 @@ def save_checkpoint(model_dict, epoch, best_loss, save_dir, iter=None):
         'epoch': epoch,
         'best_loss': best_loss
     }
-    if iter is None:
+    if iter_id is None:
         weight_path = os.path.join(save_dir, "model_weights_{:0>8}.pth".format(epoch))
     else:
-        weight_path = os.path.join(save_dir, "model_weights_{:0>4}_{:0>4}.pth".format(epoch, iter))
+        weight_path = os.path.join(save_dir, "model_weights_{:0>4}_{:0>4}.pth".format(epoch, iter_id))
     # torch.save(best_model_wts, weight_path)
     torch.save(checkpoint, weight_path)
     logger.write("epoch {}, save the weight to {}".format(epoch, weight_path))
 
 
-def get_optimizer(model, args):
+def get_optimizer(model, opt):
     """
     initialize the the optimizer
-    :param optimizer_method:
+    :param opt:
+    :param model:
     :return:
     """
     filter_params = filter(lambda p: p.requires_grad, model.parameters())
-    if args.optimizer == "SGD":
-        return torch.optim.SGD(filter_params, lr=args.lr, momentum=args.momentum)
-    elif args.optimizer == "Adam":
-        return torch.optim.Adam(filter_params, args.lr, (0.9, 0.999),  eps=1e-08, weight_decay=1e-4)
-    elif args.optimizer == "Adadelta":
-        return torch.optim.Adadelta(filter_params, lr=args.lr)
+    if opt.type == "SGD":
+        return torch.optim.SGD(filter_params, lr=opt.lr, momentum=opt.momentum)
+    elif opt.type == "Adam":
+        return torch.optim.Adam(filter_params, opt.lr, (0.9, 0.999),  eps=1e-08, weight_decay=1e-4)
+    elif opt.type == "Adadelta":
+        return torch.optim.Adadelta(filter_params, lr=opt.lr)
 
 
 def init_loss_fn():
-    cls_loss_fn = FocalLoss(device, alpha=args.focal_alpha, beta=args.focal_beta)
-    kp_loss_fn = KPFocalLoss(device, alpha=args.whd_alpha, beta=args.whd_beta)
-    ae_loss_fn = AELoss(device, alpha=args.ae_alpha, beta=args.ae_beta, delta=args.ae_delta)
+    cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
+    kp_loss_fn = KPLSLoss(device)
+    ae_loss_fn = AELoss(device, alpha=loss_cfg.ae_alpha, beta=loss_cfg.ae_beta, delta=loss_cfg.ae_delta)
     return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn)
 
 
@@ -162,7 +146,7 @@ def load_state_dict(model, save_dir, pretrained):
         model_dict.update(filtered_dict)
         model.load_state_dict(model_dict)
         model.init_weight()
-        executor.submit(save_checkpoint, model.state_dict(), 0, np.inf, args.save_dir)
+        executor.submit(save_checkpoint, model.state_dict(), 0, np.inf, data_cfg.save_dir)
         logger.write("loaded the pretrained weights:" + pretrained)
     else:
         file_list = os.listdir(save_dir)
@@ -188,7 +172,7 @@ def write_metric(metric, epoch, phase):
     :param phase: train,val,or test
     :return:
     """
-    logger.write('{phase} : [{0}/{1}]|'.format(epoch, args.num_epochs, phase=phase), end='')
+    logger.write('{phase} : [{0}/{1}]|'.format(epoch, cfg.num_epochs, phase=phase), end='')
     logger.open_summary_writer()
     for k, v in metric.items():
         logger.scalar_summary('{phase}/{}'.format(k, phase=phase), v.avg, epoch)
@@ -208,7 +192,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, de
     """
     # prepared
     model.train()
-    num_iter = len(train_dataloader) if args.max_iter <= 0 else min(len(train_dataloader), args.max_iter)
+    num_iter = len(train_dataloader) if cfg.max_iter <= 0 else min(len(train_dataloader), cfg.max_iter)
     loss_states = loss_fn.get_loss_states()
     data_time, batch_time = AverageMeter(), AverageMeter()
     running_loss = AverageMeter()
@@ -253,7 +237,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, de
         logger.write(log_item, level=1)
         del inputs, loss
         torch.cuda.empty_cache()
-        if (iter_id + 1) % args.checkpoint_span == 0:
+        if (iter_id + 1) % cfg.save_span == 0:
             executor.submit(save_checkpoint, model.state_dict(), epoch, running_loss.avg, args.save_dir, iter_id)
     avg_loss_states["Total Loss"] = running_loss
     return running_loss, avg_loss_states
@@ -262,37 +246,33 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, de
 def train():
     """
     train the model by the args
-    :param args:
     :return:
     """
     # initialize the dataloader by dir
-    transforms = TrainTransforms(args.input_size, args.num_classes, with_flip=True, with_aug_color=True)
-    train_dataloader = data.get_dataloader(args.batch_size, args.dataset, args.train_dir, input_size=args.input_size,
-                                           phase="train", transforms=transforms)
+    transforms = TrainTransforms(data_cfg.input_size, data_cfg.num_classes, with_flip=True, with_aug_color=True)
+    train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir, input_size=data_cfg.input_size,
+                                           phase="train", transforms=transforms, from_file=True)
 
     # initialize model, optimizer, loss_fn
-    model = ERFNet(args.num_classes, fixed_parts=["encoder"])
-    start_epoch, best_loss = load_state_dict(model, args.save_dir, args.pretrained_weights)
+    model = ERFNet(data_cfg.num_classes, fixed_parts=None)
+    start_epoch, best_loss = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
-    if args.debug:
-        summary(model, input_size=(3, args.input_size[0], args.input_size[1]),
-                batch_size=args.batch_size)
-    optimizer = get_optimizer(model, args)
+    optimizer = get_optimizer(model, opt_cfg)
     loss_fn = init_loss_fn()
 
     # train model
     # foreach epoch
-    for epoch in range(start_epoch, args.num_epochs):
+    for epoch in range(start_epoch, cfg.num_epochs):
         # each epoch includes two phase: train,val
-        train_loss, train_loss_states = train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, args.debug)
-        executor.submit(save_checkpoint, model.state_dict(), epoch, best_loss, args.save_dir)
+        train_loss, train_loss_states = train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch)
+        executor.submit(save_checkpoint, model.state_dict(), epoch, best_loss, data_cfg.save_dir)
         write_metric(train_loss_states, epoch, "train")
-        # val_loss, val_loss_states = val_model_for_epoch(model, val_dataloader, loss_fn, epoch, logger, args.debug)
+        # val_loss, val_loss_states = val_model_for_epoch(model, val_dataloader, loss_fn, epoch, logger)
         # write_metric(val_loss_states, epoch, "val")
         # judge the model. if model is greater than current best loss
         # if best_loss > train_loss.avg:
         #     best_loss = train_loss.avg
-        #     executor.submit(save_checkpoint, model.state_dict(), epoch, best_loss, args.save_dir)
+        #     executor.submit(save_checkpoint, model.state_dict(), epoch, best_loss, data_cfg.save_dir)
     logger.write("the best loss:{}".format(best_loss))
     logger.close()
     executor.shutdown(wait=True)

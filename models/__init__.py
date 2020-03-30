@@ -12,8 +12,9 @@ __version__ = "1.0.0"
 from . import erfnet, loss
 
 ERFNet = erfnet.ERFNet
-FocalLoss = loss.FocalLoss
-WHDLoss = loss.WHDLoss
+ClsFocalLoss = loss.ClsFocalLoss
 AELoss = loss.AELoss
 ComposeLoss = loss.ComposeLoss
 KPFocalLoss = loss.KPFocalLoss
+KPGACLoss = loss.KPGACLoss
+KPLSLoss = loss.KPLSLoss

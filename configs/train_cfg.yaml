@@ -1,0 +1,28 @@
+data:
+  train_dir:  C:\data\cityscapes-simple
+  val_dir:  C:\data\cityscapes-simple
+  save_dir: C:\data\checkpoints\erf
+  dataset: cityscapes
+  batch_size: 2
+  input_size: (512, 512)
+  num_classes: -1
+
+optimizer:
+  lr: 2e-4
+  type: Adam
+  momentum: 0.9
+
+loss:
+  focal_alpha: 2
+  focal_beta: 4
+  ae_alpha: 0.5
+  ae_beta: 1
+  ae_delta: 2
+
+max_iter: -1
+num_epochs: 2000
+save_span: 100
+seed: 1
+fixed_parts: ["encoder"]
+# pretrained_path: C:\data\checkpoints\erf\erfnet_encoder_pretrained.pth
+pretrained_path:
