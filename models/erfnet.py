@@ -152,7 +152,7 @@ class ERFNet(nn.Module):
         super().__init__()
         self.heads = {
             "hm_cls": num_classes,
-            "hm_kp": 2,
+            "hm_kp": 1,
             "hm_ae": 1
         }
         self.encoder = Encoder(num_classes)

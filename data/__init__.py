@@ -12,20 +12,17 @@ __version__ = "1.0.0"
 import torch
 import numpy as np
 from data.dataset import is_train_phase, is_val_phase
-from data import coco
 from data import cityscapes
 from data.dir import DirDatasetBuilder
 
 
 datasetBuildersMap = {
-    "coco": coco.COCODatasetBuilder,
     "cityscapes": cityscapes.CityscapesDatasetBuilder,
     "dir": DirDatasetBuilder
 }
 
 datasetClsNumMap = {
-    "coco": coco.num_cls,
-    "cityscapes": cityscapes.num_cls,
+    "cityscapes": cityscapes.num_cls
 }
 
 

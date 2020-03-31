@@ -58,9 +58,6 @@ if isinstance(opt_cfg.lr, str):
 print("train dir:", data_cfg.train_dir)
 if not os.path.exists(data_cfg.train_dir):
     raise Exception("the train dir cannot be found.")
-print("val dir:", data_cfg.val_dir)
-if not os.path.exists(data_cfg.val_dir):
-    raise Exception("the val dir cannot be found.")
 print("save dir:", data_cfg.save_dir)
 if not os.path.exists(data_cfg.save_dir):
     os.makedirs(data_cfg.save_dir)
