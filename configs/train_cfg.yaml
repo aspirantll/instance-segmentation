@@ -4,7 +4,7 @@ data:
   save_dir: C:\data\checkpoints\erf
   dataset: cityscapes
   batch_size: 2
-  input_size: (512, 512)
+  input_size: (512, 1024)
   num_classes: -1
 
 optimizer:
@@ -18,11 +18,13 @@ loss:
   ae_alpha: 0.5
   ae_beta: 1
   ae_delta: 2
+  whd_alpha: 0.5
+  whd_beta: 2
+  kp_threshold: 0.5
 
 max_iter: -1
 num_epochs: 2000
 save_span: 100
 seed: 1
 fixed_parts: ["encoder"]
-# pretrained_path: C:\data\checkpoints\erf\erfnet_encoder_pretrained.pth
-pretrained_path:
+pretrained_path: #C:\data\checkpoints\erf\erfnet_encoder_pretrained.pth

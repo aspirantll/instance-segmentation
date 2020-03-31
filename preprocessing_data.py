@@ -14,7 +14,7 @@ import data
 import tqdm
 import os
 from configs import Config
-from utils.tensor_util import save_labels
+from utils.label_io import save_labels
 
 # load arguments
 print("loading the arguments...")
@@ -35,7 +35,7 @@ if isinstance(data_cfg.input_size, str):
 
 def preprocess():
     dataloader = data.get_dataloader(1, data_cfg.dataset, data_cfg.train_dir,
-                                           input_size=data_cfg.input_size,
+                                           input_size=data_cfg.input_size, num_workers=2,
                                            phase=args.phase, transforms=None)
     target_dir = os.path.join(data_cfg.train_dir, 'preprocessed/' + args.phase)
     if not os.path.exists(target_dir):

@@ -13,12 +13,6 @@ import torch
 import numpy as np
 
 
-def unitize_redirection(kp_vectors):
-    kp_sdf = torch.sqrt(torch.pow(kp_vectors, 2).sum(1))
-    kp_directions = kp_vectors / torch.clamp(kp_sdf, min=1).unsqueeze(1)
-    return kp_directions
-
-
 def save_labels(input_tensor, label, path):
     centers, cls_ids, polygons, kp_target = label
     kp_arr = kp_target.numpy()

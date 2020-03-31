@@ -45,7 +45,7 @@ def sdf(mat):
 #     print(cfg)
 
 if __name__ == "__main__":
-    from utils.tensor_util import save_labels, load_labels
+    from utils.label_io import save_labels, load_labels
     data_file_path = r"C:\Users\liulei\Desktop\data.npy"
     arr = np.ones((16, 16))
     arr1 = np.ones((3, 3))

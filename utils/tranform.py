@@ -16,7 +16,6 @@ import numpy as np
 from torchvision.transforms import transforms
 import torchvision.transforms.functional as F
 from utils import image
-from utils.tensor_util import unitize_redirection
 from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_batch_sdf
 
 TransInfo = namedtuple('TransInfo', ['img_path', 'img_size', 'flipped_flag'])
@@ -66,9 +65,7 @@ class CommonTransforms(object):
             centers = [polygon.mean(0).astype(np.int32) for polygon in polygons]
 
             kp_mask = generate_kp_mask((1, 1, self._input_size[0], self._input_size[1]), [polygons], strategy="one-hot")
-            kp_vectors = torch.from_numpy(generate_batch_sdf(kp_mask))
-            kp_target = unitize_redirection(kp_vectors)
-            # todo ae mask
+            kp_target = torch.from_numpy(generate_batch_sdf(kp_mask))
             label = (centers, cls_ids, polygons, kp_target[0])
 
         return input_tensor, label, TransInfo(img_path, img_size, False)

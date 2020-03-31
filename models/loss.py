@@ -10,11 +10,12 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import torch
+import math
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from sklearn.utils.extmath import cartesian
 
-from utils.tensor_util import unitize_redirection
 from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_batch_sdf
 
 
@@ -24,6 +25,12 @@ def zero_tensor(device):
 
 def sigmoid_(tensor):
     return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1-1e-4)
+
+
+def unitize_direction(kp_vectors):
+    kp_sdf = torch.sqrt(torch.pow(kp_vectors, 2).sum(1))
+    kp_directions = kp_vectors / torch.clamp(kp_sdf, min=1).unsqueeze(1)
+    return kp_directions
 
 
 def grad_img(img, gx=True, gy=True):
@@ -102,6 +109,83 @@ class KPGACLoss(object):
         return GACFunction.apply(hm_kp, kp_mask), regular_item(hm_kp)
 
 
+def generalize_mean(tensor, dim, p=-2, keepdim=False):
+    # """
+    # Computes the softmin along some axes.
+    # Softmin is the same as -softmax(-x), i.e,
+    # softmin(x) = -log(sum_i(exp(-x_i)))
+
+    # The smoothness of the operator is controlled with k:
+    # softmin(x) = -log(sum_i(exp(-k*x_i)))/k
+
+    # :param input: Tensor of any dimension.
+    # :param dim: (int or tuple of ints) The dimension or dimensions to reduce.
+    # :param keepdim: (bool) Whether the output tensor has dim retained or not.
+    # :param k: (float>0) How similar softmin is to min (the lower the more smooth).
+    # """
+    # return -torch.log(torch.sum(torch.exp(-k*input), dim, keepdim))/k
+    """
+    The generalized mean. It corresponds to the minimum when p = -inf.
+    https://en.wikipedia.org/wiki/Generalized_mean
+    :param tensor: Tensor of any dimension.
+    :param dim: (int or tuple of ints) The dimension or dimensions to reduce.
+    :param keepdim: (bool) Whether the output tensor has dim retained or not.
+    :param p: (float<0).
+    """
+    assert p < 0
+    res = torch.mean((tensor + 1e-6) ** p, dim, keepdim=keepdim) ** (1. / p)
+    return res
+
+
+class WHDLoss(object):
+
+    def __init__(self, device, alpha=0.8, beta=2, th=0.5):
+        self._device = device
+        self._alpha = alpha
+        self._beta = beta
+        self._th = th
+
+    @staticmethod
+    def get_loss_names():
+        return ["kp_pos", "kp_neg", "kp_energy"]
+
+    def __call__(self, hm_kp, targets):
+        # prepare step
+        hm_kp = sigmoid_(hm_kp)
+        kp_targets = targets[3].to(self._device)
+        b, c, h, w = hm_kp.shape
+        d_max = math.sqrt(h ** 2 + w ** 2)
+
+        terms_neg = []
+        terms_pos = []
+        terms_eng = []
+        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
+        # foreach every matrix
+        for b_i in range(b):
+            hm_mat = hm_kp[b_i, 0, :, :]
+            # compute probability sum
+            p_sum = hm_mat.sum()
+            # compute Euclidean distance matrix
+            d_matrix = torch.sum(kp_targets[b_i].pow(2), -1).float().sqrt()
+            # compute term_1
+            terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_matrix / (p_sum + self._epsilon)))
+            # compute term_2
+            # expand the prob vector to n*m matrix
+            pos_vec = hm_mat.masked_select(d_matrix == 0)
+            d_min_target = (1 - pos_vec).pow(self._beta) * d_max
+            terms_pos.append(torch.mean(d_min_target))
+            # compute energy
+            cost_matrix = (d_matrix == 0).float() * d_max
+            estimate_cost = cost_matrix.masked_select(hm_mat > self._th)
+            terms_eng.append(torch.exp(- estimate_cost).sum())
+        # compute WHD loss
+        term_neg = torch.stack(terms_neg).mean()
+        term_pos = torch.stack(terms_pos).mean()
+        term_eng = torch.stack(terms_eng).mean()
+        return self._alpha * term_pos, (1 - self._alpha) * term_neg, term_eng
+
+
+
 class KPLSLoss(object):
     def __init__(self, device):
         self._device = device
@@ -115,10 +199,11 @@ class KPLSLoss(object):
         # prepare step
         print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
         kp_target = targets[3].to(self._device)
-        # unitize the output
-        unitized_kp = unitize_redirection(hm_kp)
+        # unitize the output and target
+        unitized_kp = unitize_direction(hm_kp)
+        unitized_target = unitize_direction(kp_target)
         # compute cosine similarity
-        loss = self._mse(unitized_kp, kp_target)
+        loss = self._mse(unitized_kp, unitized_target)
 
         # from utils.visualize import visualize_hm
         # from matplotlib import pyplot as plt

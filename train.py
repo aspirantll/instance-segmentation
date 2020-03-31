@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import data
 from configs import Config
-from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, KPGACLoss, KPLSLoss
+from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, KPGACLoss, KPLSLoss, WHDLoss
 from utils.tranform import TrainTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
@@ -120,7 +120,7 @@ def get_optimizer(model, opt):
 
 def init_loss_fn():
     cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    kp_loss_fn = KPLSLoss(device)
+    kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
     ae_loss_fn = AELoss(device, alpha=loss_cfg.ae_alpha, beta=loss_cfg.ae_beta, delta=loss_cfg.ae_delta)
     return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn)
 

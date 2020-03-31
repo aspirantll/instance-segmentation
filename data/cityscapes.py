@@ -7,7 +7,7 @@ from collections import namedtuple
 from utils.tranform import CommonTransforms
 from .dataset import DatasetBuilder
 from utils.image import load_rgb_image
-from utils.tensor_util import load_labels
+from utils.label_io import load_labels
 
 #--------------------------------------------------------------------------------
 # Definitions
