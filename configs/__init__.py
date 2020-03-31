@@ -11,7 +11,6 @@ __version__ = "1.0.0"
 
 import yaml
 
-
 class Config(object):
     def __init__(self, cfg_path=None, cfg=None):
         if cfg_path is None and cfg is None:

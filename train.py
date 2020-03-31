@@ -12,11 +12,15 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import argparse
-import torch
 import os
+os.system("rm /home/work/anaconda3/lib/libmkldnn.so")
+os.system("rm /home/work/anaconda3/lib/libmkldnn.so.0")
+import torch
 import time
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
+import moxing as mox
+mox.file.shift('os', 'mox')
 
 import data
 from configs import Config
@@ -39,6 +43,10 @@ print("loading the arguments...")
 parser = argparse.ArgumentParser(description="training")
 # add arguments
 parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/train_cfg.yaml", type=str)
+# for modelarts
+parser.add_argument("--data_url", required=False, type=str)
+parser.add_argument("--init_method", required=False, type=str)
+parser.add_argument("--train_url", required=False, type=str)
 # parse args
 args = parser.parse_args()
 

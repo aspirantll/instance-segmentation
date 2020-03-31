@@ -166,9 +166,9 @@ class WHDLoss(object):
             # compute probability sum
             p_sum = hm_mat.sum()
             # compute Euclidean distance matrix
-            d_matrix = torch.sum(kp_targets[b_i].pow(2), -1).float().sqrt()
+            d_matrix = torch.sum(kp_targets[b_i].pow(2), 0).float().sqrt()
             # compute term_1
-            terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_matrix / (p_sum + self._epsilon)))
+            terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_matrix / p_sum))
             # compute term_2
             # expand the prob vector to n*m matrix
             pos_vec = hm_mat.masked_select(d_matrix == 0)
@@ -177,7 +177,7 @@ class WHDLoss(object):
             # compute energy
             cost_matrix = (d_matrix == 0).float() * d_max
             estimate_cost = cost_matrix.masked_select(hm_mat > self._th)
-            terms_eng.append(torch.exp(- estimate_cost).sum())
+            terms_eng.append(d_max * torch.exp(- estimate_cost).pow(self._beta).mean())
         # compute WHD loss
         term_neg = torch.stack(terms_neg).mean()
         term_pos = torch.stack(terms_pos).mean()
