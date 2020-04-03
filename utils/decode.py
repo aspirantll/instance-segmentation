@@ -194,7 +194,7 @@ def draw_kp(kp_mask, transforms, kp_threshold, infos, keyword):
 
 
 def group_kp(hm_kp, hm_ae, transforms, center_indexes, center_cls, center_confs, infos
-             , max_distance=0.5, min_pixels=4, max_delta=10, k=1000):
+             , max_distance=0.3, min_pixels=4, max_delta=10, k=0.5):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -208,7 +208,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_indexes, center_cls, center_confs,
     # generate the centers
     centers_vector = torch.tensor([hm_ae[center[0], center[1]] for center in center_indexes])
     # handle key point
-    kp_mask = topk(hm_kp, k)
+    kp_mask = (hm_kp > k).byte()
     draw_kp(kp_mask, transforms,  k, infos, "bound")
     # clear the non-active part
     active_ae = hm_ae.masked_select(kp_mask.byte())
@@ -239,7 +239,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_indexes, center_cls, center_confs,
     return center_cls, center_confs, center_indexes, kps
 
 
-def decode_output(outs, infos, transforms, kp_th=5000, cls_th=1000):
+def decode_output(outs, infos, transforms, kp_th=0.5, cls_th=100):
     """
     decode the model output
     :param outs:

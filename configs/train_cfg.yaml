@@ -1,5 +1,5 @@
 data:
-  train_dir:  C:\data\cityscapes
+  train_dir:  C:\data\cityscapes-simple
   save_dir: C:\data\checkpoints\erf
   dataset: cityscapes
   batch_size: 2

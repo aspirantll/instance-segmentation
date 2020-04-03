@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import data
 from configs import Config
-from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, KPGACLoss, KPLSLoss, WHDLoss
+from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, KPLSLoss, WHDLoss
 from utils.tranform import TrainTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
@@ -117,7 +117,7 @@ def get_optimizer(model, opt):
 
 def init_loss_fn():
     cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
+    kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
     ae_loss_fn = AELoss(device, alpha=loss_cfg.ae_alpha, beta=loss_cfg.ae_beta, delta=loss_cfg.ae_delta)
     return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn)
 
@@ -251,7 +251,7 @@ def train():
                                            phase="train", transforms=transforms, from_file=True)
 
     # initialize model, optimizer, loss_fn
-    model = ERFNet(data_cfg.num_classes, fixed_parts=None)
+    model = ERFNet(data_cfg.num_classes, fixed_parts=cfg.fixed_parts)
     start_epoch, best_loss = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
     optimizer = get_optimizer(model, opt_cfg)

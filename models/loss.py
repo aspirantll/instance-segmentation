@@ -33,82 +33,6 @@ def unitize_direction(kp_vectors):
     return kp_directions
 
 
-def grad_img(img, gx=True, gy=True):
-    if gx:
-        x_kernel = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        grad_x = F.conv2d(img, x_kernel, padding=1)
-    if gy:
-        y_kernel = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        grad_y = F.conv2d(img, y_kernel, padding=1)
-    if gx and not gy:
-        return grad_x
-    elif not gx and gy:
-        return grad_y
-    else:
-        return grad_x, grad_y
-
-
-def regular_item(u):
-    mask = (u==0).float()
-    du_dx, du_dy = grad_img(u)
-    mu = torch.sqrt(du_dx ** 2 + du_dy ** 2)
-    item_mask = (mu < 1).float()
-    item1 = 1/(2 * np.pi)**2 * (1-torch.cos(2 * np.pi * mu))
-    item2 = 1/2 * (mu - 1)**2
-    p_mat = item1 * item_mask + item2 * (1 - item_mask)
-    # return (p_mat * (1-mask)).mean()
-    return torch.tensor(0, dtype=torch.float32)
-
-
-class GACFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, inputs, gt):
-        ctx.save_for_backward(inputs, gt)
-        contour_mask = (inputs == 0).float()
-        return (contour_mask != gt).float().sum()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        u, i = ctx.saved_tensors
-
-        g = torch.exp(- i * 1000)
-        dg_dx, dg_dy = grad_img(g)
-
-        du_dx, du_dy = grad_img(u)
-        mu = torch.sqrt(du_dx**2 + du_dy**2)
-        unit_du_dx = du_dx / (mu + 1e-6)
-        unit_du_dy = du_dy / (mu + 1e-6)
-        k = grad_img(unit_du_dx, gy=False) + grad_img(unit_du_dy, gx=False)
-        return (g * mu * k + dg_dx * du_dx + dg_dy * du_dy) * grad_output, grad_output
-
-
-class KPGACLoss(object):
-
-    def __init__(self, device):
-        self._device = device
-
-    @staticmethod
-    def get_loss_names():
-        return ["kp_energy", "kp_regular"]
-
-    def __call__(self, hm_kp, targets):
-        # prepare step
-        b, c, h, w = hm_kp.shape
-        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
-        _, _, polygons_list = targets
-        # generate the kp mask
-        kp_mask = generate_kp_mask((b, c, h, w), polygons_list, strategy="one-hot")
-        kp_mask = torch.from_numpy(kp_mask).to(self._device)
-        GACFunction.apply(hm_kp, kp_mask)
-        from utils.visualize import visualize_hm
-        from matplotlib import pyplot as plt
-        fig = plt.figure()
-        visualize_hm(hm_kp[0, 0].detach())
-        plt.savefig(r"C:\data\temp\kp.png")
-        plt.close(fig)
-        return GACFunction.apply(hm_kp, kp_mask), regular_item(hm_kp)
-
-
 def generalize_mean(tensor, dim, p=-2, keepdim=False):
     # """
     # Computes the softmin along some axes.
@@ -171,13 +95,14 @@ class WHDLoss(object):
             terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_matrix / p_sum))
             # compute term_2
             # expand the prob vector to n*m matrix
-            pos_vec = hm_mat.masked_select(d_matrix == 0)
+            pos_mask = d_matrix == 0
+            pos_vec = hm_mat.masked_select(pos_mask)
             d_min_target = (1 - pos_vec).pow(self._beta) * d_max
-            terms_pos.append(torch.mean(d_min_target))
+            terms_pos.append(d_min_target.sum()/torch.clamp(pos_mask.float().sum(), min=1))
             # compute energy
-            cost_matrix = (d_matrix == 0).float() * d_max
-            estimate_cost = cost_matrix.masked_select(hm_mat > self._th)
-            terms_eng.append(d_max * torch.exp(- estimate_cost).pow(self._beta).mean())
+            pt_mask = hm_mat > self._th
+            estimate_cost = hm_mat.masked_select(pt_mask) * d_matrix.masked_select(pt_mask)
+            terms_eng.append(estimate_cost.sum()/torch.clamp(pt_mask.float().sum(), min=1))
         # compute WHD loss
         term_neg = torch.stack(terms_neg).mean()
         term_pos = torch.stack(terms_pos).mean()
@@ -185,15 +110,15 @@ class WHDLoss(object):
         return self._alpha * term_pos, (1 - self._alpha) * term_neg, term_eng
 
 
-
 class KPLSLoss(object):
-    def __init__(self, device):
+    def __init__(self, device, th=0.5):
         self._device = device
         self._mse = nn.MSELoss(reduce=True, size_average=False, reduction="sum")
+        self._th = th
 
     @staticmethod
     def get_loss_names():
-        return ["kp"]
+        return ["kp_sdf", "kp_eng"]
 
     def __call__(self, hm_kp, targets):
         # prepare step
@@ -204,27 +129,12 @@ class KPLSLoss(object):
         unitized_target = unitize_direction(kp_target)
         # compute cosine similarity
         loss = self._mse(unitized_kp, unitized_target)
-
-        # from utils.visualize import visualize_hm
-        # from matplotlib import pyplot as plt
-        # fig = plt.figure()
-        # visualize_hm((kp_target[0]*kp_target[0]).sum(0).detach())
-        # plt.savefig(r"C:\data\temp\kp_true.png")
-        # plt.close(fig)
-        # fig = plt.figure()
-        # visualize_hm((unitized_kp[0] * unitized_kp[0]).sum(0).detach())
-        # plt.savefig(r"C:\data\temp\kp.png")
-        # plt.close(fig)
-        # fig = plt.figure()
-        # visualize_hm(loss[0].detach())
-        # plt.savefig(r"C:\data\temp\loss.png")
-        # plt.close(fig)
-        # fig = plt.figure()
-        # visualize_hm(1 - loss[0].detach())
-        # plt.savefig(r"C:\data\temp\sim.png")
-        # plt.close(fig)
-
-        return [loss]
+        # compute energy
+        d_matrix = torch.sum(kp_target.pow(2), 1).float().sqrt()
+        sdf_matrix = torch.sum(hm_kp.pow(2), 1).float().sqrt()
+        pt_mask = sdf_matrix == 0
+        estimate_cost = (1 - sdf_matrix.masked_select(pt_mask)) * d_matrix.masked_select(pt_mask)
+        return [loss, estimate_cost.sum() / torch.clamp(pt_mask.float().sum(), min=1)]
 
 
 def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum"):
@@ -307,7 +217,8 @@ class KPFocalLoss(FocalLoss):
         # prepare step
         hm_pred = sigmoid_(hm_kp)
         print("kp mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
-        kp_mask = targets.to(self._device)
+        _, _, polygons_list, _ = targets
+        kp_mask = torch.from_numpy(generate_kp_mask(hm_kp.shape, polygons_list, strategy="one-hot")).to(self._device)
         return super().__call__(hm_kp, kp_mask)
 
 

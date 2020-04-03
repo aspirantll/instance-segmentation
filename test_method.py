@@ -1,3 +1,7 @@
+import os
+
+from models import ERFNet
+
 __copyright__ = \
     """
     Copyright &copyright © (c) 2020 The Board of xx University.
@@ -44,12 +48,35 @@ def sdf(mat):
 #     cfg = Config("./configs/train_cfg.yaml")
 #     print(cfg)
 
+# if __name__ == "__main__":
+#     from utils.label_io import save_labels, load_labels
+#     data_file_path = r"C:\Users\liulei\Desktop\data.npy"
+#     arr = np.ones((16, 16))
+#     arr1 = np.ones((3, 3))
+#     save_labels(torch.from_numpy(arr), (arr1, arr1, arr1, torch.from_numpy(arr1)), data_file_path)
+#     img, label = load_labels(data_file_path)
+#     print(img)
+#     print(label)
+
 if __name__ == "__main__":
-    from utils.label_io import save_labels, load_labels
-    data_file_path = r"C:\Users\liulei\Desktop\data.npy"
-    arr = np.ones((16, 16))
-    arr1 = np.ones((3, 3))
-    save_labels(torch.from_numpy(arr), (arr1, arr1, arr1, torch.from_numpy(arr1)), data_file_path)
-    img, label = load_labels(data_file_path)
-    print(img)
-    print(label)
+    model = ERFNet(14)
+    save_dir = "C:\data\checkpoints\erf"
+    file_list = os.listdir(save_dir)
+    file_list.sort(reverse=True)
+    for file in file_list:
+        if file.startswith("model_weights_") and file.endswith(".pth"):
+            weight_path = os.path.join(save_dir, file)
+            checkpoint = torch.load(weight_path)
+            model.load_state_dict(checkpoint["state_dict"])
+            start_epoch = checkpoint["epoch"]
+            best_loss = checkpoint["best_loss"] if "best_loss" in checkpoint else np.inf
+            break
+    epoch = 0
+    checkpoint = {
+        'state_dict': model.state_dict(),
+        'epoch': epoch,
+        'best_loss': np.inf
+    }
+    weight_path = os.path.join(save_dir, "model_weights_{:0>8}.pth".format(epoch))
+    # torch.save(best_model_wts, weight_path)
+    torch.save(checkpoint, weight_path)

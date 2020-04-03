@@ -16,6 +16,5 @@ ClsFocalLoss = loss.ClsFocalLoss
 AELoss = loss.AELoss
 ComposeLoss = loss.ComposeLoss
 KPFocalLoss = loss.KPFocalLoss
-KPGACLoss = loss.KPGACLoss
 KPLSLoss = loss.KPLSLoss
 WHDLoss = loss.WHDLoss
