@@ -12,11 +12,9 @@ __version__ = "1.0.0"
 import torch
 import math
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-from sklearn.utils.extmath import cartesian
 
-from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_batch_sdf
+from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_wh_target
 
 
 def zero_tensor(device):
@@ -61,6 +59,24 @@ def generalize_mean(tensor, dim, p=-2, keepdim=False):
     return res
 
 
+def _gather_feat(feat, ind, mask=None):
+    dim = feat.size(2)
+    ind = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
+    feat = feat.gather(1, ind)
+    if mask is not None:
+        mask = mask.unsqueeze(2).expand_as(feat)
+        feat = feat[mask]
+        feat = feat.view(-1, dim)
+    return feat
+
+
+def _tranpose_and_gather_feat(feat, ind):
+    feat = feat.permute(0, 2, 3, 1).contiguous()
+    feat = feat.view(feat.size(0), -1, feat.size(3))
+    feat = _gather_feat(feat, ind)
+    return feat
+
+
 class WHDLoss(object):
 
     def __init__(self, device, alpha=0.8, beta=2, th=0.5):
@@ -100,41 +116,40 @@ class WHDLoss(object):
             d_min_target = (1 - pos_vec).pow(self._beta) * d_max
             terms_pos.append(d_min_target.sum()/torch.clamp(pos_mask.float().sum(), min=1))
             # compute energy
-            pt_mask = hm_mat > self._th
-            estimate_cost = hm_mat.masked_select(pt_mask) * d_matrix.masked_select(pt_mask)
-            terms_eng.append(estimate_cost.sum()/torch.clamp(pt_mask.float().sum(), min=1))
+            pt_mask = (hm_mat > self._th) * (1 - pos_mask)
+            pt_pred = hm_mat.masked_select(pt_mask)
+            energy_sum = (pt_pred - self._th).pow(self._beta).sum() * d_max
+            pt_sum = pt_mask.sum()
+            if pt_sum == 0:
+                terms_eng.append(zero_tensor(self._device))
+            else:
+                terms_eng.append(energy_sum / pt_sum)
         # compute WHD loss
         term_neg = torch.stack(terms_neg).mean()
         term_pos = torch.stack(terms_pos).mean()
         term_eng = torch.stack(terms_eng).mean()
-        return self._alpha * term_pos, (1 - self._alpha) * term_neg, term_eng
+        return self._alpha * term_pos, (1 - self._alpha) * term_neg, (1 - self._alpha) * term_eng
 
 
-class KPLSLoss(object):
-    def __init__(self, device, th=0.5):
+class WHLoss(object):
+    def __init__(self, device, type='smooth_l1'):
         self._device = device
-        self._mse = nn.MSELoss(reduce=True, size_average=False, reduction="sum")
-        self._th = th
+        if type == 'l1':
+            self.loss = torch.nn.functional.l1_loss
+        elif type == 'smooth_l1':
+            self.loss = torch.nn.functional.smooth_l1_loss
 
     @staticmethod
     def get_loss_names():
-        return ["kp_sdf", "kp_eng"]
+        return ["wh"]
 
-    def __call__(self, hm_kp, targets):
-        # prepare step
-        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
-        kp_target = targets[3].to(self._device)
-        # unitize the output and target
-        unitized_kp = unitize_direction(hm_kp)
-        unitized_target = unitize_direction(kp_target)
-        # compute cosine similarity
-        loss = self._mse(unitized_kp, unitized_target)
-        # compute energy
-        d_matrix = torch.sum(kp_target.pow(2), 1).float().sqrt()
-        sdf_matrix = torch.sum(hm_kp.pow(2), 1).float().sqrt()
-        pt_mask = sdf_matrix == 0
-        estimate_cost = (1 - sdf_matrix.masked_select(pt_mask)) * d_matrix.masked_select(pt_mask)
-        return [loss, estimate_cost.sum() / torch.clamp(pt_mask.float().sum(), min=1)]
+    def __call__(self, hm_wh, targets):
+        centers_list, _, polygons_list, _ = targets
+        wh_target, wh_mask = generate_wh_target(hm_wh.shape, centers_list, polygons_list)
+        wh_target, wh_mask = torch.from_numpy(wh_target), torch.from_numpy(wh_mask)
+        loss = self.loss(hm_wh * wh_mask, wh_target * wh_mask, reduction='sum')
+        loss = loss / (wh_mask.sum() + 1e-4)
+        return [loss]
 
 
 def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum"):
@@ -262,7 +277,7 @@ class AELoss(object):
         """
         # prepare step
         b, c, h, w = hm_ae.shape
-        centers_list , _, polygons_list, _ = targets
+        centers_list, _, polygons_list, _ = targets
         # handle the loss
         l_pulls = []
         l_pushs = []
@@ -304,15 +319,19 @@ class AELoss(object):
 
 
 class ComposeLoss(nn.Module):
-    def __init__(self, cls_loss_fn, kp_loss_fn, ae_loss_fn):
+    def __init__(self, cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn):
         super(ComposeLoss, self).__init__()
         self._cls_loss_fn = cls_loss_fn
         self._kp_loss_fn = kp_loss_fn
         self._ae_loss_fn = ae_loss_fn
+        self._wh_loss_fn = wh_loss_fn
+
         self._loss_names = []
         self._loss_names.extend(cls_loss_fn.get_loss_names())
         self._loss_names.extend(kp_loss_fn.get_loss_names())
         self._loss_names.extend(ae_loss_fn.get_loss_names())
+        self._loss_names.extend(wh_loss_fn.get_loss_names())
+
         self._loss_names.append("total_loss")
 
     def forward(self, outputs, targets):
@@ -320,18 +339,20 @@ class ComposeLoss(nn.Module):
         hm_cls = outputs["hm_cls"]
         hm_kp = outputs["hm_kp"]
         hm_ae = outputs["hm_ae"]
+        hm_wh = outputs["hm_wh"]
 
         losses = []
         # compute losses
         losses.extend(self._cls_loss_fn(hm_cls, targets))
         losses.extend(self._kp_loss_fn(hm_kp, targets))
         losses.extend(self._ae_loss_fn(hm_ae, targets))
+        losses.extend(self._wh_loss_fn(hm_wh, targets))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()
         losses.append(total_loss)
 
-        return total_loss, {self._loss_names[i]:losses[i] for i in range(len(self._loss_names))}
+        return total_loss, {self._loss_names[i]: losses[i] for i in range(len(self._loss_names))}
 
     def get_loss_states(self):
         return self._loss_names

@@ -189,6 +189,8 @@ class CityscapesDataset(Dataset):
         else:
             self._transforms = CommonTransforms(input_size, num_cls)
 
+        print("dataset size: {}".format(len(self.filenames)))
+
     def __getitem__(self, index):
         filename = self.filenames[index]
         if self._from_file:

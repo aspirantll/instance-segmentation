@@ -1,4 +1,5 @@
 import os
+from math import log
 
 from models import ERFNet
 
@@ -66,11 +67,14 @@ if __name__ == "__main__":
     for file in file_list:
         if file.startswith("model_weights_") and file.endswith(".pth"):
             weight_path = os.path.join(save_dir, file)
-            checkpoint = torch.load(weight_path)
+            checkpoint = torch.load(weight_path, map_location="cpu")
             model.load_state_dict(checkpoint["state_dict"])
             start_epoch = checkpoint["epoch"]
             best_loss = checkpoint["best_loss"] if "best_loss" in checkpoint else np.inf
             break
+    for m in model.hm_kp.modules():
+        if isinstance(m, torch.nn.Conv2d):
+            torch.nn.init.normal_(m.weight, std=0.01)
     epoch = 0
     checkpoint = {
         'state_dict': model.state_dict(),

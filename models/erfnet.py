@@ -153,7 +153,8 @@ class ERFNet(nn.Module):
         self.heads = {
             "hm_cls": num_classes,
             "hm_kp": 1,
-            "hm_ae": 1
+            "hm_ae": 1,
+            "hm_wh": 2
         }
         self.encoder = Encoder(num_classes)
         for head, dims in self.heads.items():

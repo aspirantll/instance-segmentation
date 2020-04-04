@@ -187,6 +187,30 @@ def generate_batch_sdf(batch):
     return np.vstack(sdf_list)
 
 
+def generate_wh_target(target_size, centers_list, polygons_list):
+    """
+    generate the mask and target for wh
+    :param target_size: b, c, h, w
+    :param centers_list:
+    :param polygons_list:
+    :return:
+    """
+    b, c, h, w = target_size
+    assert b == len(polygons_list)
+    wh_mask = np.zeros(target_size, dtype=np.float32)
+    wh_target = np.zeros(target_size, dtype=np.float32)
+
+    for b_i in range(b):
+        centers = centers_list[b_i]
+        polygons = polygons_list[b_i]
+        for o_j in range(len(centers)):
+            center = centers[o_j]
+            polygon = polygons[o_j]
+            box_size = polygon.max(0) - polygon.min(0)
+            wh_mask[b_i, :, center[0], center[1]] = 1
+            wh_target[b_i, :, center[0], center[1]] = box_size
+
+    return wh_target, wh_mask
 
 
 
