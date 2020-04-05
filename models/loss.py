@@ -260,14 +260,11 @@ class ClsFocalLoss(FocalLoss):
 
 
 class AELoss(object):
-    def __init__(self, device, alpha=0.5, beta=1, delta=2):
+    def __init__(self, device):
         self._device = device
-        self._delta = delta
-        self._alpha = alpha
-        self._beta = beta
 
     def get_loss_names(self):
-        return ["ae_pull", "ae_push", "ae_center"]
+        return ["ae_loss"]
 
     def __call__(self, hm_ae, targets):
         """
@@ -278,44 +275,31 @@ class AELoss(object):
         # prepare step
         b, c, h, w = hm_ae.shape
         centers_list, _, polygons_list, _, _ = targets
-        # handle the loss
-        l_pulls = []
-        l_pushs = []
-        l_centers = []
+        ae_losses = []
         # foreach every batch
         for b_i in range(b):
             # select the active point
             centers, polygons = centers_list[b_i], polygons_list[b_i]
             n = len(centers)
-            if n == 0:
-                l_pulls.append(zero_tensor(self._device))
-                l_pushs.append(zero_tensor(self._device))
-                l_centers.append(zero_tensor(self._device))
-                continue
-            hm_mat = hm_ae[b_i, 0, :, :]
-            active_aes = [hm_mat[polygon.T] for polygon in polygons]
-            center_aes = hm_mat[np.vstack(centers).T]
-            # compute the means
-            ae_means = torch.stack([polygon.mean() for polygon in active_aes])
-            # compute pull, namely variance
-            ae_variances = [(active_aes[i]-ae_means[i]).abs().mean() for i in range(n)]
-            l_pulls.append(torch.stack(ae_variances).mean())
-            # compute push
-            if n > 1:
-                d_means = (ae_means.unsqueeze(1) - ae_means.unsqueeze(0)).abs()
-                d_means = self._delta * (1 - torch.eye(n).to(self._device)) - d_means
-                torch.nn.ReLU(inplace=True)(d_means)
-                l_pushs.append(d_means.sum() / (n * (n - 1)))
-            else:
-                l_pushs.append(zero_tensor(self._device))
-            # compute center
-            center_diff = (center_aes - ae_means).abs()
-            l_centers.append(center_diff.mean())
+            ae_loss = zero_tensor(self._device)
+            ae_mat = hm_ae[b_i]
+
+            for c_j in range(n):
+                center = centers[c_j]
+                polygon = polygons[c_j]
+
+                center_tensor = torch.from_numpy(center.astype(np.float32)).to(self._device)
+                polygon_tensor = torch.from_numpy(polygon.astype(np.float32)).to(self._device)
+
+                ae_tensor = torch.stack([ae_mat[:, p[0], p[1]] for p in polygon])
+
+                ae_loss += (ae_tensor + polygon_tensor - center_tensor).pow(2).sum(dim=1).sqrt().mean()
+
+            ae_losses.append(ae_loss)
+
         # compute mean loss
-        l_pull = torch.stack(l_pulls).mean()
-        l_push = torch.stack(l_pushs).mean()
-        l_center = torch.stack(l_centers).mean()
-        return self._alpha * l_pull, (1 - self._alpha) * l_push, self._beta * l_center
+        ae_loss = torch.stack(ae_losses).mean()
+        return [ae_loss]
 
 
 class ComposeLoss(nn.Module):

@@ -153,7 +153,7 @@ class ERFNet(nn.Module):
         self.heads = {
             "hm_cls": num_classes,
             "hm_kp": 1,
-            "hm_ae": 1,
+            "hm_ae": 2,
             "hm_wh": 2
         }
         self.encoder = Encoder(num_classes)
@@ -202,8 +202,11 @@ class ERFNet(nn.Module):
                 layers.output_conv.bias.fill_(-log((1-pi)/pi))
 
         # hm_cls
-        init_model_weights(self.hm_cls, method="normal", std=0.01, pi=1e-6)
+        # init_model_weights(self.hm_cls, method="normal", std=0.01, pi=1e-6)
         # hm_kp
-        init_model_weights(self.hm_kp, method="normal", std=0.01, pi=1e-3)
-
+        # init_model_weights(self.hm_kp, method="normal", std=0.01, pi=1e-3)
+        # hm_wh
+        init_model_weights(self.hm_wh, method="kaiming", std=0.01, pi=1e-3)
+        # hm_ae
+        init_model_weights(self.hm_ae, method="kaiming", std=0.01, pi=1e-3)
 
