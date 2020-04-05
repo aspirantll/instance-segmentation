@@ -53,6 +53,8 @@ class CommonTransforms(object):
         input_tensor = F.to_tensor(img)
         if label is not None:
             cls_ids, polygons = label
+            # handle box size
+            box_sizes = [(polygon.max(0) - polygon.min(0))[::-1] for polygon in polygons]
             # transform pixel
             if size_flag:
                 polygons = [image.apply_affine_transform(polygon, transform_matrix, input_size)
@@ -66,7 +68,7 @@ class CommonTransforms(object):
 
             kp_mask = generate_kp_mask((1, 1, self._input_size[0], self._input_size[1]), [polygons], strategy="one-hot")
             kp_target = torch.from_numpy(generate_batch_sdf(kp_mask))
-            label = (centers, cls_ids, polygons, kp_target[0])
+            label = (centers, cls_ids, polygons, box_sizes, kp_target[0])
 
         return input_tensor, label, TransInfo(img_path, img_size, False)
 
@@ -122,12 +124,12 @@ class TrainTransforms(CommonTransforms):
         if flipped_flag:
             input_tensor = torch.flip(input_tensor, [2])
             if label is not None:
-                centers, cls_ids, polygons, kp_target = label
+                centers, cls_ids, polygons, box_sizes, kp_target = label
                 for c_i in range(len(centers)):
                     centers[c_i][1] = self._input_size[1] - centers[c_i][1] - 1
                     polygons[c_i][:, 1] = self._input_size[1] - polygons[c_i][:, 1] - 1
                 kp_target = torch.flip(kp_target, [2])
-                label = (centers, cls_ids, polygons, kp_target)
+                label = (centers, cls_ids, polygons, box_sizes, kp_target)
 
         return input_tensor, label, TransInfo(img_path, img_size, flipped_flag)
 

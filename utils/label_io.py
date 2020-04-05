@@ -14,14 +14,14 @@ import numpy as np
 
 
 def save_labels(input_tensor, label, path):
-    centers, cls_ids, polygons, kp_target = label
+    centers, cls_ids, polygons, box_sizes, kp_target = label
     kp_arr = kp_target.numpy()
     input_arr = input_tensor.numpy()
-    np.savez_compressed(path, (input_arr, centers, cls_ids, polygons, kp_arr))
+    np.savez_compressed(path, (input_arr, centers, cls_ids, polygons, box_sizes, kp_arr))
 
 
 def load_labels(path):
-    input_arr, centers, cls_ids, polygons, kp_arr = np.load(path, allow_pickle=True)['arr_0.npy']
+    input_arr, centers, cls_ids, polygons, box_sizes, kp_arr = np.load(path, allow_pickle=True)['arr_0.npy']
     kp_target = torch.from_numpy(kp_arr)
     input_tensor = torch.from_numpy(input_arr)
-    return input_tensor, (centers, cls_ids, polygons, kp_target)
+    return input_tensor, (centers, cls_ids, polygons, box_sizes, kp_target)

@@ -15,18 +15,18 @@ import os
 import os.path as op
 import multiprocessing
 from tqdm import tqdm
+import json
 
 from configs import Config
 from utils.label_io import save_labels
-from data.cityscapes import CityscapesDataset
-
+from data.cityscapes import CityscapesDataset, parse_label_json
 
 # load arguments
 print("loading the arguments...")
 parser = argparse.ArgumentParser(description="training")
 # add arguments
 parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/train_cfg.yaml", type=str)
-parser.add_argument("--phases", help="which phase", dest="phases", default=["train", "val", "test"], type=list)
+parser.add_argument("--phases", help="which phase", dest="phases", default=["val", "test"], type=list)
 parser.add_argument("--workers", help="the num of worker process", dest="workers", default=3, type=list)
 
 # parse args
@@ -46,15 +46,20 @@ def process_item(info_queue, dataset, target_dir, j, cover):
     filename = op.basename(dataset.filenames[j])[:-4] + ".npz"
     save_path = op.join(target_dir, filename)
     if cover or not op.exists(save_path):
-        input_tensor, label, _ = dataset[j]
-        save_labels(input_tensor, label, save_path)
+        input_tensor, label, infos = dataset[j]
+        gt_filename = infos.img_path.replace("leftImg8bit", "gtFine").replace(".png", "_polygons.json")
+        with open(gt_filename, 'rb') as f:
+            _, polygons = parse_label_json(json.load(f))
+        box_sizes = [(polygon.max(0) - polygon.min(0))[::-1] for polygon in polygons]
+        centers, cls_ids, polygons, kp_target = label
+        save_labels(input_tensor, (centers, cls_ids, polygons, box_sizes, kp_target), save_path)
     info_queue.put(j)
 
 
 def preprocess(cover=False):
     for i in range(len(args.phases)):
         subset = args.phases[i]
-        dataset = CityscapesDataset(data_cfg.train_dir, data_cfg.input_size, subset=subset)
+        dataset = CityscapesDataset(data_cfg.train_dir, data_cfg.input_size, subset=subset, from_file=True)
         target_dir = op.join(data_cfg.train_dir, 'preprocessed/' + subset)
         if not op.exists(target_dir):
             os.makedirs(target_dir)
@@ -71,4 +76,4 @@ def preprocess(cover=False):
 
 
 if __name__ == "__main__":
-    preprocess()
+    preprocess(True)

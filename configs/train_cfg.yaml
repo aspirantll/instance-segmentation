@@ -1,5 +1,5 @@
 data:
-  train_dir:  C:\data\cityscapes-simple
+  train_dir:  C:\data\cityscapes
   save_dir: C:\data\checkpoints\erf
   dataset: cityscapes
   batch_size: 2
@@ -26,4 +26,4 @@ num_epochs: 2000
 save_span: 100
 seed: 1
 fixed_parts: []
-pretrained_path: #C:\data\checkpoints\erf\erfnet_encoder_pretrained.pth
+pretrained_path: #C:\data\checkpoints\erf\model_weights_00000025.pth

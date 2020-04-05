@@ -167,17 +167,15 @@ class CityscapesDataset(Dataset):
 
     def __init__(self, root, input_size, transforms=None, subset='train', from_file=False):
         self._from_file = from_file
-        self.images_root = os.path.join(root, 'leftImg8bit/')
-        self.labels_root = os.path.join(root, 'gtFine/')
+        self.images_root = os.path.join(root, 'leftImg8bit/' + subset)
+        self.labels_root = os.path.join(root, 'gtFine/' + subset)
         self.preprocess_root = os.path.join(root, 'preprocessed/' + subset)
 
         if not self._from_file:
-            self.images_root += subset
             self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.images_root)) for f
                               in fn if is_image(f)]
             self.filenames.sort()
 
-            self.labels_root += subset
             self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in
                                 fn if is_label(f)]
             self.filenamesGt.sort()

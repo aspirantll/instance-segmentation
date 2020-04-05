@@ -180,7 +180,7 @@ def write_metric(metric, epoch, phase):
     logger.close_summary_writer()
 
 
-def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, debug=False):
+def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
     """
     train model for a epoch
     :param model:

@@ -92,7 +92,7 @@ class WHDLoss(object):
     def __call__(self, hm_kp, targets):
         # prepare step
         hm_kp = sigmoid_(hm_kp)
-        kp_targets = targets[3].to(self._device)
+        kp_targets = targets[-1].to(self._device)
         b, c, h, w = hm_kp.shape
         d_max = math.sqrt(h ** 2 + w ** 2)
 
@@ -144,9 +144,9 @@ class WHLoss(object):
         return ["wh"]
 
     def __call__(self, hm_wh, targets):
-        centers_list, _, polygons_list, _ = targets
-        wh_target, wh_mask = generate_wh_target(hm_wh.shape, centers_list, polygons_list)
-        wh_target, wh_mask = torch.from_numpy(wh_target), torch.from_numpy(wh_mask)
+        centers_list, _, polygons_list, box_sizes_list, _ = targets
+        wh_target, wh_mask = generate_wh_target(hm_wh.shape, centers_list, box_sizes_list)
+        wh_target, wh_mask = torch.from_numpy(wh_target).to(self._device), torch.from_numpy(wh_mask).to(self._device)
         loss = self.loss(hm_wh * wh_mask, wh_target * wh_mask, reduction='sum')
         loss = loss / (wh_mask.sum() + 1e-4)
         return [loss]
@@ -232,7 +232,7 @@ class KPFocalLoss(FocalLoss):
         # prepare step
         hm_pred = sigmoid_(hm_kp)
         print("kp mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
-        _, _, polygons_list, _ = targets
+        _, _, polygons_list, _, _ = targets
         kp_mask = torch.from_numpy(generate_kp_mask(hm_kp.shape, polygons_list, strategy="one-hot")).to(self._device)
         return super().__call__(hm_kp, kp_mask)
 
@@ -250,7 +250,7 @@ class ClsFocalLoss(FocalLoss):
         # prepare step
         hm_pred = sigmoid_(hm_cls)
         print("cls mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
-        centers_list, cls_ids_list, polygons_list, _ = targets
+        centers_list, cls_ids_list, polygons_list, _, _ = targets
         # handle box size
         box_sizes = [[tuple(polygon.max(0) - polygon.min(0)) for polygon in polygons] for polygons in polygons_list]
 
@@ -277,7 +277,7 @@ class AELoss(object):
         """
         # prepare step
         b, c, h, w = hm_ae.shape
-        centers_list, _, polygons_list, _ = targets
+        centers_list, _, polygons_list, _, _ = targets
         # handle the loss
         l_pulls = []
         l_pushs = []
