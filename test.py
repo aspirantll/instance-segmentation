@@ -20,6 +20,7 @@ import numpy as np
 from utils.logger import Logger
 from models import ERFNet
 import data
+from utils import decode
 from utils.decode import decode_output
 from utils.visualize import visualize_instance
 from matplotlib import pyplot as plt
@@ -123,6 +124,7 @@ def test():
     model.eval()
     transforms = CommonTransforms(args.input_size, args.num_classes)
 
+    decode.device = device
     if args.test_dir is not None:
         # initialize the dataloader by dir
         test_dataloader = data.get_dataloader(args.batch_size, args.dataset, args.test_dir,

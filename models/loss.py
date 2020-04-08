@@ -25,58 +25,6 @@ def sigmoid_(tensor):
     return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1-1e-4)
 
 
-def unitize_direction(kp_vectors):
-    kp_sdf = torch.sqrt(torch.pow(kp_vectors, 2).sum(1))
-    kp_directions = kp_vectors / torch.clamp(kp_sdf, min=1).unsqueeze(1)
-    return kp_directions
-
-
-def generalize_mean(tensor, dim, p=-2, keepdim=False):
-    # """
-    # Computes the softmin along some axes.
-    # Softmin is the same as -softmax(-x), i.e,
-    # softmin(x) = -log(sum_i(exp(-x_i)))
-
-    # The smoothness of the operator is controlled with k:
-    # softmin(x) = -log(sum_i(exp(-k*x_i)))/k
-
-    # :param input: Tensor of any dimension.
-    # :param dim: (int or tuple of ints) The dimension or dimensions to reduce.
-    # :param keepdim: (bool) Whether the output tensor has dim retained or not.
-    # :param k: (float>0) How similar softmin is to min (the lower the more smooth).
-    # """
-    # return -torch.log(torch.sum(torch.exp(-k*input), dim, keepdim))/k
-    """
-    The generalized mean. It corresponds to the minimum when p = -inf.
-    https://en.wikipedia.org/wiki/Generalized_mean
-    :param tensor: Tensor of any dimension.
-    :param dim: (int or tuple of ints) The dimension or dimensions to reduce.
-    :param keepdim: (bool) Whether the output tensor has dim retained or not.
-    :param p: (float<0).
-    """
-    assert p < 0
-    res = torch.mean((tensor + 1e-6) ** p, dim, keepdim=keepdim) ** (1. / p)
-    return res
-
-
-def _gather_feat(feat, ind, mask=None):
-    dim = feat.size(2)
-    ind = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
-    feat = feat.gather(1, ind)
-    if mask is not None:
-        mask = mask.unsqueeze(2).expand_as(feat)
-        feat = feat[mask]
-        feat = feat.view(-1, dim)
-    return feat
-
-
-def _tranpose_and_gather_feat(feat, ind):
-    feat = feat.permute(0, 2, 3, 1).contiguous()
-    feat = feat.view(feat.size(0), -1, feat.size(3))
-    feat = _gather_feat(feat, ind)
-    return feat
-
-
 class WHDLoss(object):
 
     def __init__(self, device, alpha=0.8, beta=2, th=0.5):
