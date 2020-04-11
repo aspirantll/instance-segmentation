@@ -1,5 +1,3 @@
-from typing import Iterable
-
 __copyright__ = \
     """
     Copyright &copyright © (c) 2020 The Board of xx University.
@@ -12,14 +10,14 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import os
+import math
 import cv2
 import torch
 import torch.nn as nn
 import numpy as np
 from utils import image
-import alphashape
+import maxflow
 from utils.nms import py_cpu_nms
-from utils.kmeans import kmeans
 
 device = None
 
@@ -144,7 +142,7 @@ def nms(center_cls, center_confs, center_indexes, groups, img_size, threshold=0.
     return n_center_cls, n_center_confs, n_center_indexes, n_groups
 
 
-def aug_group(pts, center_loc, rp=80):
+def aug_group(pts, center_loc, pred, ds):
     """
     aug the points
     :param pts: n * 2
@@ -157,23 +155,10 @@ def aug_group(pts, center_loc, rp=80):
     polar_pts = cartesian2polar(pts, internal_point)
     sorted_inds = np.argsort(polar_pts[:, 0])
     sorted_kp = np.array([pts[ind] for ind in sorted_inds])
-    # compute distance to center point, then sort
-    d_vec = np.power(sorted_kp - center_loc, 2).sum(1)
-    filtered_kp = sorted_kp[d_vec > np.percentile(d_vec, rp)]
-    return filtered_kp
+    sorted_pred = np.array([pred[ind] for ind in sorted_inds])
+    sorted_ds = np.array([ds[ind] for ind in sorted_inds])
 
-
-def filter_ghost_polygons(polygons, center):
-    if not isinstance(polygons, Iterable):
-        polygons = [polygons]
-    max_area = 0
-    max_poly = None
-    for poly in polygons:
-        np_poly = np.array(poly.exterior.coords).astype(np.float32)
-        if poly.area > max_area and cv2.pointPolygonTest(np_poly, tuple(center), False) > 0:
-            max_area = poly.area
-            max_poly = np_poly
-    return max_poly
+    return sorted_kp
 
 
 def remove_ghost_boxes(det_tuple, min_pixels):
@@ -183,25 +168,27 @@ def remove_ghost_boxes(det_tuple, min_pixels):
     :param min_pixels:
     :return:
     """
-    center_cls, center_confs, center_indexes, kps, preds = det_tuple
-    n_center_cls, n_center_confs, n_center_indexes, n_kps, n_preds = [], [], [], [], []
+    center_cls, center_confs, center_indexes, kps, preds, kp_ds = det_tuple
+    n_center_cls, n_center_confs, n_center_indexes, n_kps = [], [], [], []
     for i in range(len(center_cls)):
         # obtain the item
         kp = kps[i]
         center_loc = center_indexes[i]
+        pred = preds[i]
+        ds = kp_ds[i]
 
         if len(kp) < min_pixels:
             continue
         # remove the center obj which far from the mean
-        bound_polygons = alphashape.alphashape(np.array(kp))
-        poly = filter_ghost_polygons(bound_polygons, center_loc)
-        if poly is not None:
+        # bound_polygons = alphashape.alphashape(np.array(kp))
+        # poly = filter_ghost_polygons(bound_polygons, center_loc)
+        np_poly = aug_group(np.array(kp), center_loc, pred, ds)
+        if cv2.pointPolygonTest(np_poly, tuple(center_loc), False) > 0:
             n_center_cls.append(center_cls[i])
             n_center_confs.append(center_confs[i])
             n_center_indexes.append(center_indexes[i])
-            n_kps.append(poly.reshape(-1, 2))
-            n_preds.append(preds[i])
-    return n_center_cls, n_center_confs, n_center_indexes, n_kps, n_preds
+            n_kps.append(np_poly.reshape(-1, 2))
+    return n_center_cls, n_center_confs, n_center_indexes, n_kps
 
 
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
@@ -251,14 +238,10 @@ def draw_objs(kp_index, kp_mask, transforms, infos):
         draw_kp(c_kps, transforms, i, infos, "objs")
 
 
-def draw_candid(kps, lt, rb, infos, ind):
-    img = cv2.imread(infos.img_path)
-    cv2.rectangle(img, lt, rb, (255, 0, 0))
-    img_c = cv2.drawKeypoints(img, cv2.KeyPoint_convert(kps.reshape((-1, 1, 2))), None,
-                              color=(0, 255, 0))
-    cv2.imwrite(
-        r'C:\data\checkpoints\test\{}_{}{}.png'.format(os.path.basename(infos.img_path), "candid", ind),
-        img_c)
+def draw_candid(kps, lt, rb, img, color):
+    cv2.rectangle(img, lt, rb, color)
+    return cv2.drawKeypoints(img, cv2.KeyPoint_convert(kps.reshape((-1, 1, 2))), None,
+                              color=color)
 
 
 def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th=100):
@@ -294,7 +277,7 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th=100):
 
 
 def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, center_confs, infos
-             , max_distance=10, min_pixels=4, k=1000):
+             , d_th=12, min_pixels=4, k=1000):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -315,34 +298,39 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     correspond_index = kp_mask.nonzero()
     active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t() + correspond_index.float()
     d_matrix = (active_ae.unsqueeze(1) - centers_vector.unsqueeze(0)).pow(2).sum(-1).sqrt()
-    correspond_mask = d_matrix < max_distance
-    # draw_objs(correspond_index, correspond_mask, transforms, infos)
 
     # center pixel locations
     center_indexes = [transforms.transform_pixel(center, infos)[0] for center in center_indexes]
     # foreach the active point to group
     kps = []
     kp_preds = []
+    kp_ds = []
+    img = cv2.imread(infos.img_path)
+    color = [int(e) for e in np.random.random_integers(0, 256, 3)]
     for i in range(centers_vector.shape[0]):
-        # get the points for center
-        kp_pixels = correspond_index[correspond_mask[:, i].nonzero().numpy()[:, 0], :]
-        true_pixels = kp_pixels.float()
-        # transform to origin image pixel
-        true_pixels = transforms.transform_pixel(true_pixels.numpy(), infos)
         # filter the boxes
         h, w = tuple(center_whs[i])
         x, y = tuple(center_indexes[i])
-        x_inds = (x - w / 2 - w * 0.1 < true_pixels[:, 0]) * (true_pixels[:, 0] < x + w / 2 + w * 0.1)
-        y_inds = (y - h / 2 - h * 0.1 < true_pixels[:, 1]) * (true_pixels[:, 1] < y + h / 2 + h * 0.1)
+        # get the points for center
+        correspond_vec = d_matrix[:, i] < d_th
+        kp_pixels = correspond_index[correspond_vec.nonzero().numpy()[:, 0], :]
+        true_pixels = kp_pixels.float()
+        # transform to origin image pixel
+        true_pixels = transforms.transform_pixel(true_pixels.numpy(), infos)
 
-        draw_candid(true_pixels, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)),
-                    infos, i)
+
+        img = draw_candid(true_pixels, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)),
+                    img, (color[0] * (i+1) % 256, color[1] * (i+1) % 256, color[2] * (i+1) % 256))
         # put to groups, kp_preds
-        kps.append(true_pixels[x_inds * y_inds, :])
+        kps.append(true_pixels)
         kp_preds.append(hm_kp[kp_pixels.numpy()[:, 0], kp_pixels.numpy()[:, 1]])
+        kp_ds.append(d_matrix[:, i][correspond_vec.nonzero().numpy()[:, 0]])
+    cv2.imwrite(
+        r'C:\data\checkpoints\test\{}_{}.png'.format(os.path.basename(infos.img_path), "candid"),
+        img)
     # filter some group
-    center_cls, center_confs, center_indexes, kps, kp_preds = remove_ghost_boxes(
-        (center_cls, center_confs, center_indexes, kps, kp_preds), min_pixels)
+    center_cls, center_confs, center_indexes, kps = remove_ghost_boxes(
+        (center_cls, center_confs, center_indexes, kps, kp_preds, kp_ds), min_pixels)
     return center_cls, center_confs, center_indexes, kps
 
 

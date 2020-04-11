@@ -84,3 +84,4 @@ if __name__ == "__main__":
     weight_path = os.path.join(save_dir, "model_weights_{:0>8}.pth".format(epoch))
     # torch.save(best_model_wts, weight_path)
     torch.save(checkpoint, weight_path)
+    import cv2

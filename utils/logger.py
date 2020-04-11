@@ -41,6 +41,7 @@ class SimpleLogger(object):
             os.mkdir(log_dir)
 
         self.log_dir = log_dir
+        self.summary_count = 0
 
     def write(self, txt='', end='\n', level=0):
         txt = "\t"* level + str(txt) + end

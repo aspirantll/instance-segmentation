@@ -34,8 +34,6 @@ def visualize_instance(instances):
 
     p = PatchCollection(polygons, facecolor=color, linewidths=0, alpha=0.4)
     ax.add_collection(p)
-    p = PatchCollection(polygons, facecolor='none', edgecolors=color, linewidths=2)
-    ax.add_collection(p)
 
 
 def visualize_objs(objs):
