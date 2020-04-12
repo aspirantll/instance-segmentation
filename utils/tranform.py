@@ -34,7 +34,7 @@ class CommonTransforms(object):
         input_size = self._input_size[::-1] if size_flag else self._input_size
         return size_flag, origin_size, input_size
 
-    def __call__(self, img, label=None, img_path=None, from_file=False):
+    def __call__(self, img, label=None, img_path=None, from_file=False, kp=True):
         """
         compose transform the all the transform
         :param img:  rgb and the shape is h*w*c
@@ -42,9 +42,11 @@ class CommonTransforms(object):
         :param img_path: as the key
         :return:
         """
-        img_size = img.shape[:2]
         if from_file:
+            img_size = np.array(img.shape[1:3]) * 2
             return img, label, TransInfo(img_path, img_size, False)
+
+        img_size = img.shape[:2] if len(img.shape) == 3 else img.shape[2:4]
         # find the greater axis as the x
         size_flag, origin_size, input_size = self.regular_size(img_size)
         transform_matrix = image.get_affine_transform(origin_size, input_size)
@@ -66,9 +68,12 @@ class CommonTransforms(object):
             # handle center
             centers = [polygon.mean(0).astype(np.int32) for polygon in polygons]
 
-            kp_mask = generate_kp_mask((1, 1, self._input_size[0], self._input_size[1]), [polygons], strategy="one-hot")
-            kp_target = torch.from_numpy(generate_batch_sdf(kp_mask))
-            label = (centers, cls_ids, polygons, box_sizes, kp_target[0])
+            if kp:
+                kp_mask = generate_kp_mask((1, 1, self._input_size[0], self._input_size[1]), [polygons], strategy="one-hot")
+                kp_target = torch.from_numpy(generate_batch_sdf(kp_mask))
+                label = (centers, cls_ids, polygons, box_sizes, kp_target[0])
+            else:
+                label = (centers, cls_ids, polygons, box_sizes)
 
         return input_tensor, label, TransInfo(img_path, img_size, False)
 
@@ -108,7 +113,7 @@ class TrainTransforms(CommonTransforms):
         :param img_path: as the key
         :return:
         """
-        img_size = img.shape[:2] if len(img.shape)==3 else img.shape[2:4]
+        img_size = img.shape[:2] if len(img.shape) == 3 else img.shape[2:4]
         if from_file:
             input_tensor, label = img, label
         else:

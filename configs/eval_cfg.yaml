@@ -1,0 +1,11 @@
+data:
+  eval_dir:  C:\data\cityscapes-simple
+  save_dir: C:\data\checkpoints\test
+  dataset: cityscapes
+  batch_size: 2
+  input_size: (512, 1024)
+  num_classes: -1
+
+seed: 1
+weights_path: C:\data\checkpoints\erf\model_weights_00000214.pth
+weights_dir:

@@ -12,8 +12,6 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import torch
-from tqdm import tqdm
-
 
 def kmeans(
         X,
@@ -21,7 +19,8 @@ def kmeans(
         cluster_centers,
         distance='euclidean',
         tol=1e-4,
-        device=torch.device('cpu')
+        device=torch.device('cpu'),
+        allow_distance=65535
 ):
     """
     perform kmeans
@@ -30,10 +29,9 @@ def kmeans(
     :param distance: (str) distance [options: 'euclidean', 'cosine'] [default: 'euclidean']
     :param tol: (float) threshold [default: 0.0001]
     :param device: (torch.device) device [default: cpu]
+    :param max_distance: allow max distance
     :return: (torch.tensor, torch.tensor) cluster ids, cluster centers
     """
-    print(f'running k-means on {device}..')
-
     if distance == 'euclidean':
         pairwise_distance_function = pairwise_distance
     elif distance == 'cosine':
@@ -48,21 +46,19 @@ def kmeans(
     X = X.to(device)
 
     # find data point closest to the initial cluster center
-    initial_state = cluster_centers
-    dis = pairwise_distance_function(X, initial_state)
-    choice_points = torch.argmin(dis, dim=0)
-    initial_state = X[choice_points]
-    initial_state = initial_state.to(device)
-
+    initial_state = cluster_centers.to(device)
 
     iteration = 0
-    tqdm_meter = tqdm(desc='[running kmeans]')
+    # tqdm_meter = tqdm(desc='[running kmeans]')
     while True:
-
         dis = pairwise_distance_function(X, initial_state)
+        min_distance, choice_cluster = torch.min(dis, dim=1)
 
-        choice_cluster = torch.argmin(dis, dim=1)
+        # set cluster id = num_cluster if min distance is greater than allow distance
+        allow_mask = (min_distance < allow_distance).long()
+        choice_cluster = choice_cluster * allow_mask + (1 - allow_mask) * num_clusters
 
+        # compute new centers
         center_shift = torch.zeros(1, dtype=torch.float32).to(device)
         new_states = []
         for index in range(num_clusters):
@@ -73,6 +69,8 @@ def kmeans(
             if selected.shape[0] > 0:
                 new_states.append(selected.mean(dim=0))
                 center_shift += (new_states[-1] - initial_state[index]).pow(2).sum().sqrt()
+            else:
+                new_states.append(initial_state[index])
 
         num_clusters = len(new_states)
         initial_state = torch.stack(new_states)
@@ -81,53 +79,16 @@ def kmeans(
         iteration = iteration + 1
 
         # update tqdm meter
-        tqdm_meter.set_postfix(
-            iteration=f'{iteration}',
-            center_shift=f'{center_shift.item() ** 2:0.6f}',
-            tol=f'{tol:0.6f}'
-        )
-        tqdm_meter.update()
+        # tqdm_meter.set_postfix(
+        #     iteration=f'{iteration}',
+        #     center_shift=f'{center_shift.item() ** 2:0.6f}',
+        #     tol=f'{tol:0.6f}'
+        # )
+        # tqdm_meter.update()
         if center_shift ** 2 < tol:
             break
 
-
-
-    return choice_cluster.cpu(), initial_state.cpu()
-
-
-def kmeans_predict(
-        X,
-        cluster_centers,
-        distance='euclidean',
-        device=torch.device('cpu')
-):
-    """
-    predict using cluster centers
-    :param X: (torch.tensor) matrix
-    :param cluster_centers: (torch.tensor) cluster centers
-    :param distance: (str) distance [options: 'euclidean', 'cosine'] [default: 'euclidean']
-    :param device: (torch.device) device [default: 'cpu']
-    :return: (torch.tensor) cluster ids
-    """
-    print(f'predicting on {device}..')
-
-    if distance == 'euclidean':
-        pairwise_distance_function = pairwise_distance
-    elif distance == 'cosine':
-        pairwise_distance_function = pairwise_cosine
-    else:
-        raise NotImplementedError
-
-    # convert to float
-    X = X.float()
-
-    # transfer to device
-    X = X.to(device)
-
-    dis = pairwise_distance_function(X, cluster_centers)
-    choice_cluster = torch.argmin(dis, dim=1)
-
-    return choice_cluster.cpu()
+    return choice_cluster, initial_state
 
 
 def pairwise_distance(data1, data2, device=torch.device('cpu')):
@@ -143,7 +104,7 @@ def pairwise_distance(data1, data2, device=torch.device('cpu')):
     dis = (A - B) ** 2.0
     # return N*N matrix for pairwise distance
     dis = dis.sum(dim=-1).squeeze()
-    return dis
+    return dis.sqrt()
 
 
 def pairwise_cosine(data1, data2, device=torch.device('cpu')):

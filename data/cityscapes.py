@@ -108,6 +108,8 @@ labels = [
 
 # Please refer to the main method below for example usages!
 
+# label names
+label_names = [label.name for label in labels][1:]
 # name to label object
 name2label      = { label.name    : label for label in labels           }
 # id to label object

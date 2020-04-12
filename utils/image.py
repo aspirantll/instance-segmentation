@@ -13,14 +13,9 @@ __version__ = "1.0.0"
 
 import numpy as np
 import cv2
-from pycocotools import mask
-from PIL import Image
 
 from scipy.sparse import lil_matrix, issparse
 from skimage.measure import find_contours
-
-
-from torchvision.transforms import transforms
 
 
 def random_crop(img_size):
@@ -182,19 +177,25 @@ def _reformat_mask(mask):
     return mask
 
 
-def poly_to_mask(poly, img_size):
-    rle = mask.frPyObjects(poly, img_size[0], img_size[1])
-    return mask.decode(rle)
+def poly_to_mask(poly, img_size=None):
+    poly = poly.astype(np.int32)
+    if img_size is None:
+        img_size = (poly.max(0) + 1)[::-1]
+    mask = np.zeros(img_size, dtype=np.int32)
+    return cv2.fillPoly(mask, [poly], 1)
 
 
 def compute_iou_for_mask(mask1, mask2):
-    # compute union and intersect
-    mask_sum = mask1.sum() + mask2.sum()
-    mask_intersect = (mask1 * mask2).sum()
-    return mask_intersect / (mask_sum - mask_intersect)
+    overlap = mask1 & mask2
+    union = mask1 | mask2
+    return float(overlap.sum() + 1) / float(union.sum() + 1)
 
 
-def compute_iou_for_poly(poly1, poly2, img_size):
+def compute_iou_for_poly(poly1, poly2, img_size=None):
+    if img_size is None:
+        img_size = (np.max(np.vstack((poly1.max(0), poly2.max(0)))
+                          , axis=0).astype(np.int32) + 1)[::-1]
+
     # generate mask
     mask1 = poly_to_mask(poly1, img_size)
     mask2 = poly_to_mask(poly2, img_size)

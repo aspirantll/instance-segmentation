@@ -17,6 +17,7 @@ __version__ = "1.0.0"
 import argparse
 import torch
 import os
+import cv2
 import numpy as np
 from utils.logger import Logger
 from models import ERFNet
@@ -25,7 +26,6 @@ from utils import decode
 from utils.decode import decode_output
 from utils.visualize import visualize_instance
 from matplotlib import pyplot as plt
-from PIL import Image
 from utils import image
 
 
@@ -96,14 +96,11 @@ def handle_output(inputs, infos, model, transforms):
             name = os.path.basename(img_path)
             det = dets[i]
             logger.write("in {} detected {} objs".format(name, len(det)))
-            img = Image.open(img_path)
-            plt.figure(img_path)
-            plt.imshow(img)
+            img = cv2.imread(img_path)
             for j in range(len(det)):
-                # logger.write(det)
-                visualize_instance([det[j]])
+                img = visualize_instance(img, [det[j]], mask=True)
             save_path = os.path.join(data_cfg.save_dir, name)
-            plt.savefig(save_path, dpi=1024)
+            cv2.imwrite(save_path, img)
             logger.write("detected result saved in {}".format(save_path))
 
 
@@ -126,7 +123,7 @@ def test():
     if data_cfg.test_dir is not None:
         # initialize the dataloader by dir
         test_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.test_dir,
-                                               input_size=data_cfg.input_size,
+                                               input_size=data_cfg.input_size, with_label=False,
                                                phase="test", transforms=transforms)
         # foreach the images
         for iter_id, test_data in enumerate(test_dataloader):
