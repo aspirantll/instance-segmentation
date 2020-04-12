@@ -108,6 +108,8 @@ labels = [
 
 # Please refer to the main method below for example usages!
 
+# label names
+label_names = [label.name for label in labels][1:]
 # name to label object
 name2label      = { label.name    : label for label in labels           }
 # id to label object
@@ -126,27 +128,20 @@ for label in labels:
         category2labels[category] = [label]
 
 num_cls = len(labels)
-EXTENSIONS = ['.jpg', '.png']
+IMAGE_EXTENSIONS = ['.jpg', '.png']
+NP_EXTENSIONS = ['.npy', '.npz']
 
 
 def is_image(filename):
-    return any(filename.endswith(ext) for ext in EXTENSIONS)
+    return any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS)
+
+
+def is_np(filename):
+    return any(filename.endswith(ext) for ext in NP_EXTENSIONS)
 
 
 def is_label(filename):
     return filename.endswith("_polygons.json")
-
-
-def image_path(root, basename, extension):
-    return os.path.join(root, f'{basename}{extension}')
-
-
-def image_path_city(root, name):
-    return os.path.join(root, f'{name}')
-
-
-def image_basename(filename):
-    return os.path.basename(os.path.splitext(filename)[0])
 
 
 def parse_label_json(label_json):
@@ -174,37 +169,42 @@ class CityscapesDataset(Dataset):
 
     def __init__(self, root, input_size, transforms=None, subset='train', from_file=False):
         self._from_file = from_file
-
-        self.images_root = os.path.join(root, 'leftImg8bit/')
-        self.images_root += subset
-        self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.images_root)) for f in
-                          fn if is_image(f)]
-        self.filenames.sort()
-
+        self.images_root = os.path.join(root, 'leftImg8bit/' + subset)
+        self.labels_root = os.path.join(root, 'gtFine/' + subset)
         self.preprocess_root = os.path.join(root, 'preprocessed/' + subset)
+
         if not self._from_file:
-            self.labels_root = os.path.join(root, 'gtFine/')
-            self.labels_root += subset
+            self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.images_root)) for f
+                              in fn if is_image(f)]
+            self.filenames.sort()
+
             self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in
                                 fn if is_label(f)]
             self.filenamesGt.sort()
-
+        else:
+            self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.preprocess_root)) for f
+                              in fn if is_np(f)]
         if transforms is not None:
             self._transforms = transforms  # ADDED THIS
         else:
             self._transforms = CommonTransforms(input_size, num_cls)
 
+        print("dataset size: {}".format(len(self.filenames)))
+
     def __getitem__(self, index):
         filename = self.filenames[index]
-        img_path = image_path_city(self.images_root, filename)
         if self._from_file:
-            data_file = os.path.join(self.preprocess_root, os.path.basename(filename)[:-4]) + ".npy"
-            input_img, label = load_labels(data_file)
+            input_img, label = load_labels(filename)
+            base_name = os.path.basename(filename)
+            prefix_name = base_name[:base_name.rfind('.')]
+            city_name = prefix_name[:prefix_name.find('_')]
+            img_path = os.path.join(self.images_root, city_name, prefix_name + ".png")
         else:
+            img_path = filename
             input_img = load_rgb_image(img_path)
 
             filenameGt = self.filenamesGt[index]
-            with open(image_path_city(self.labels_root, filenameGt), 'rb') as f:
+            with open(filenameGt, 'rb') as f:
                 label = parse_label_json(json.load(f))
 
         input_img, label, trans_info = self._transforms(input_img, label, img_path, self._from_file)

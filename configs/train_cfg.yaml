@@ -3,7 +3,7 @@ data:
   val_dir:  s3://hyy-coco/datasets/cityscapes
   save_dir: s3://hyy-coco/checkpoints
   dataset: cityscapes
-  batch_size: 2
+  batch_size: 8
   input_size: (512, 1024)
   num_classes: -1
 
@@ -18,13 +18,14 @@ loss:
   ae_alpha: 0.5
   ae_beta: 1
   ae_delta: 2
-  whd_alpha: 0.5
+  whd_alpha: 0.2
   whd_beta: 2
-  kp_threshold: 0.5
+  kp_threshold: 0.4
 
 max_iter: -1
 num_epochs: 2000
-save_span: 100
+save_span: 1000
 seed: 1
 fixed_parts: []
-pretrained_path: #C:\data\checkpoints\erf\erfnet_encoder_pretrained.pth
+pretrained_path: #s3://hyy-coco/checkpoints/model_weights_00000000.pth
+

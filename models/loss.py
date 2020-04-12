@@ -12,11 +12,9 @@ __version__ = "1.0.0"
 import torch
 import math
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-from sklearn.utils.extmath import cartesian
 
-from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_batch_sdf
+from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_wh_target
 
 
 def zero_tensor(device):
@@ -25,116 +23,6 @@ def zero_tensor(device):
 
 def sigmoid_(tensor):
     return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1-1e-4)
-
-
-def unitize_direction(kp_vectors):
-    kp_sdf = torch.sqrt(torch.pow(kp_vectors, 2).sum(1))
-    kp_directions = kp_vectors / torch.clamp(kp_sdf, min=1).unsqueeze(1)
-    return kp_directions
-
-
-def grad_img(img, gx=True, gy=True):
-    if gx:
-        x_kernel = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        grad_x = F.conv2d(img, x_kernel, padding=1)
-    if gy:
-        y_kernel = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        grad_y = F.conv2d(img, y_kernel, padding=1)
-    if gx and not gy:
-        return grad_x
-    elif not gx and gy:
-        return grad_y
-    else:
-        return grad_x, grad_y
-
-
-def regular_item(u):
-    mask = (u==0).float()
-    du_dx, du_dy = grad_img(u)
-    mu = torch.sqrt(du_dx ** 2 + du_dy ** 2)
-    item_mask = (mu < 1).float()
-    item1 = 1/(2 * np.pi)**2 * (1-torch.cos(2 * np.pi * mu))
-    item2 = 1/2 * (mu - 1)**2
-    p_mat = item1 * item_mask + item2 * (1 - item_mask)
-    # return (p_mat * (1-mask)).mean()
-    return torch.tensor(0, dtype=torch.float32)
-
-
-class GACFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, inputs, gt):
-        ctx.save_for_backward(inputs, gt)
-        contour_mask = (inputs == 0).float()
-        return (contour_mask != gt).float().sum()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        u, i = ctx.saved_tensors
-
-        g = torch.exp(- i * 1000)
-        dg_dx, dg_dy = grad_img(g)
-
-        du_dx, du_dy = grad_img(u)
-        mu = torch.sqrt(du_dx**2 + du_dy**2)
-        unit_du_dx = du_dx / (mu + 1e-6)
-        unit_du_dy = du_dy / (mu + 1e-6)
-        k = grad_img(unit_du_dx, gy=False) + grad_img(unit_du_dy, gx=False)
-        return (g * mu * k + dg_dx * du_dx + dg_dy * du_dy) * grad_output, grad_output
-
-
-class KPGACLoss(object):
-
-    def __init__(self, device):
-        self._device = device
-
-    @staticmethod
-    def get_loss_names():
-        return ["kp_energy", "kp_regular"]
-
-    def __call__(self, hm_kp, targets):
-        # prepare step
-        b, c, h, w = hm_kp.shape
-        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
-        _, _, polygons_list = targets
-        # generate the kp mask
-        kp_mask = generate_kp_mask((b, c, h, w), polygons_list, strategy="one-hot")
-        kp_mask = torch.from_numpy(kp_mask).to(self._device)
-        GACFunction.apply(hm_kp, kp_mask)
-        from utils.visualize import visualize_hm
-        from matplotlib import pyplot as plt
-        fig = plt.figure()
-        visualize_hm(hm_kp[0, 0].detach())
-        plt.savefig(r"C:\data\temp\kp.png")
-        plt.close(fig)
-        return GACFunction.apply(hm_kp, kp_mask), regular_item(hm_kp)
-
-
-def generalize_mean(tensor, dim, p=-2, keepdim=False):
-    # """
-    # Computes the softmin along some axes.
-    # Softmin is the same as -softmax(-x), i.e,
-    # softmin(x) = -log(sum_i(exp(-x_i)))
-
-    # The smoothness of the operator is controlled with k:
-    # softmin(x) = -log(sum_i(exp(-k*x_i)))/k
-
-    # :param input: Tensor of any dimension.
-    # :param dim: (int or tuple of ints) The dimension or dimensions to reduce.
-    # :param keepdim: (bool) Whether the output tensor has dim retained or not.
-    # :param k: (float>0) How similar softmin is to min (the lower the more smooth).
-    # """
-    # return -torch.log(torch.sum(torch.exp(-k*input), dim, keepdim))/k
-    """
-    The generalized mean. It corresponds to the minimum when p = -inf.
-    https://en.wikipedia.org/wiki/Generalized_mean
-    :param tensor: Tensor of any dimension.
-    :param dim: (int or tuple of ints) The dimension or dimensions to reduce.
-    :param keepdim: (bool) Whether the output tensor has dim retained or not.
-    :param p: (float<0).
-    """
-    assert p < 0
-    res = torch.mean((tensor + 1e-6) ** p, dim, keepdim=keepdim) ** (1. / p)
-    return res
 
 
 class WHDLoss(object):
@@ -152,7 +40,7 @@ class WHDLoss(object):
     def __call__(self, hm_kp, targets):
         # prepare step
         hm_kp = sigmoid_(hm_kp)
-        kp_targets = targets[3].to(self._device)
+        kp_targets = targets[-1].to(self._device)
         b, c, h, w = hm_kp.shape
         d_max = math.sqrt(h ** 2 + w ** 2)
 
@@ -171,59 +59,44 @@ class WHDLoss(object):
             terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_matrix / p_sum))
             # compute term_2
             # expand the prob vector to n*m matrix
-            pos_vec = hm_mat.masked_select(d_matrix == 0)
+            pos_mask = d_matrix == 0
+            pos_vec = hm_mat.masked_select(pos_mask)
             d_min_target = (1 - pos_vec).pow(self._beta) * d_max
-            terms_pos.append(torch.mean(d_min_target))
+            terms_pos.append(d_min_target.sum()/torch.clamp(pos_mask.float().sum(), min=1))
             # compute energy
-            cost_matrix = (d_matrix == 0).float() * d_max
-            estimate_cost = cost_matrix.masked_select(hm_mat > self._th)
-            terms_eng.append(d_max * torch.exp(- estimate_cost).pow(self._beta).mean())
+            pt_mask = (hm_mat > self._th) * (1 - pos_mask)
+            pt_pred = hm_mat.masked_select(pt_mask)
+            energy_sum = (pt_pred - self._th).pow(self._beta).sum() * d_max
+            pt_sum = pt_mask.sum()
+            if pt_sum == 0:
+                terms_eng.append(zero_tensor(self._device))
+            else:
+                terms_eng.append(energy_sum / pt_sum)
         # compute WHD loss
         term_neg = torch.stack(terms_neg).mean()
         term_pos = torch.stack(terms_pos).mean()
         term_eng = torch.stack(terms_eng).mean()
-        return self._alpha * term_pos, (1 - self._alpha) * term_neg, term_eng
+        return self._alpha * term_pos, (1 - self._alpha) * term_neg, (1 - self._alpha) * term_eng
 
 
-
-class KPLSLoss(object):
-    def __init__(self, device):
+class WHLoss(object):
+    def __init__(self, device, type='smooth_l1'):
         self._device = device
-        self._mse = nn.MSELoss(reduce=True, size_average=False, reduction="sum")
+        if type == 'l1':
+            self.loss = torch.nn.functional.l1_loss
+        elif type == 'smooth_l1':
+            self.loss = torch.nn.functional.smooth_l1_loss
 
     @staticmethod
     def get_loss_names():
-        return ["kp"]
+        return ["wh"]
 
-    def __call__(self, hm_kp, targets):
-        # prepare step
-        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
-        kp_target = targets[3].to(self._device)
-        # unitize the output and target
-        unitized_kp = unitize_direction(hm_kp)
-        unitized_target = unitize_direction(kp_target)
-        # compute cosine similarity
-        loss = self._mse(unitized_kp, unitized_target)
-
-        # from utils.visualize import visualize_hm
-        # from matplotlib import pyplot as plt
-        # fig = plt.figure()
-        # visualize_hm((kp_target[0]*kp_target[0]).sum(0).detach())
-        # plt.savefig(r"C:\data\temp\kp_true.png")
-        # plt.close(fig)
-        # fig = plt.figure()
-        # visualize_hm((unitized_kp[0] * unitized_kp[0]).sum(0).detach())
-        # plt.savefig(r"C:\data\temp\kp.png")
-        # plt.close(fig)
-        # fig = plt.figure()
-        # visualize_hm(loss[0].detach())
-        # plt.savefig(r"C:\data\temp\loss.png")
-        # plt.close(fig)
-        # fig = plt.figure()
-        # visualize_hm(1 - loss[0].detach())
-        # plt.savefig(r"C:\data\temp\sim.png")
-        # plt.close(fig)
-
+    def __call__(self, hm_wh, targets):
+        centers_list, _, polygons_list, box_sizes_list, _ = targets
+        wh_target, wh_mask = generate_wh_target(hm_wh.shape, centers_list, box_sizes_list)
+        wh_target, wh_mask = torch.from_numpy(wh_target).to(self._device), torch.from_numpy(wh_mask).to(self._device)
+        loss = self.loss(hm_wh * wh_mask, wh_target * wh_mask, reduction='sum')
+        loss = loss / (wh_mask.sum() + 1e-4)
         return [loss]
 
 
@@ -307,7 +180,8 @@ class KPFocalLoss(FocalLoss):
         # prepare step
         hm_pred = sigmoid_(hm_kp)
         print("kp mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
-        kp_mask = targets.to(self._device)
+        _, _, polygons_list, _, _ = targets
+        kp_mask = torch.from_numpy(generate_kp_mask(hm_kp.shape, polygons_list, strategy="one-hot")).to(self._device)
         return super().__call__(hm_kp, kp_mask)
 
 
@@ -324,7 +198,7 @@ class ClsFocalLoss(FocalLoss):
         # prepare step
         hm_pred = sigmoid_(hm_cls)
         print("cls mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
-        centers_list, cls_ids_list, polygons_list, _ = targets
+        centers_list, cls_ids_list, polygons_list, _, _ = targets
         # handle box size
         box_sizes = [[tuple(polygon.max(0) - polygon.min(0)) for polygon in polygons] for polygons in polygons_list]
 
@@ -334,14 +208,11 @@ class ClsFocalLoss(FocalLoss):
 
 
 class AELoss(object):
-    def __init__(self, device, alpha=0.5, beta=1, delta=2):
+    def __init__(self, device):
         self._device = device
-        self._delta = delta
-        self._alpha = alpha
-        self._beta = beta
 
     def get_loss_names(self):
-        return ["ae_pull", "ae_push", "ae_center"]
+        return ["ae_loss"]
 
     def __call__(self, hm_ae, targets):
         """
@@ -351,57 +222,48 @@ class AELoss(object):
         """
         # prepare step
         b, c, h, w = hm_ae.shape
-        centers_list , _, polygons_list, _ = targets
-        # handle the loss
-        l_pulls = []
-        l_pushs = []
-        l_centers = []
+        centers_list, _, polygons_list, _, _ = targets
+        ae_losses = []
         # foreach every batch
         for b_i in range(b):
             # select the active point
             centers, polygons = centers_list[b_i], polygons_list[b_i]
             n = len(centers)
-            if n == 0:
-                l_pulls.append(zero_tensor(self._device))
-                l_pushs.append(zero_tensor(self._device))
-                l_centers.append(zero_tensor(self._device))
-                continue
-            hm_mat = hm_ae[b_i, 0, :, :]
-            active_aes = [hm_mat[polygon.T] for polygon in polygons]
-            center_aes = hm_mat[np.vstack(centers).T]
-            # compute the means
-            ae_means = torch.stack([polygon.mean() for polygon in active_aes])
-            # compute pull, namely variance
-            ae_variances = [(active_aes[i]-ae_means[i]).abs().mean() for i in range(n)]
-            l_pulls.append(torch.stack(ae_variances).mean())
-            # compute push
-            if n > 1:
-                d_means = (ae_means.unsqueeze(1) - ae_means.unsqueeze(0)).abs()
-                d_means = self._delta * (1 - torch.eye(n).to(self._device)) - d_means
-                torch.nn.ReLU(inplace=True)(d_means)
-                l_pushs.append(d_means.sum() / (n * (n - 1)))
-            else:
-                l_pushs.append(zero_tensor(self._device))
-            # compute center
-            center_diff = (center_aes - ae_means).abs()
-            l_centers.append(center_diff.mean())
+            ae_loss = zero_tensor(self._device)
+            ae_mat = hm_ae[b_i]
+
+            for c_j in range(n):
+                center = centers[c_j]
+                polygon = polygons[c_j]
+
+                center_tensor = torch.from_numpy(center.astype(np.float32)).to(self._device)
+                polygon_tensor = torch.from_numpy(polygon.astype(np.float32)).to(self._device)
+
+                ae_tensor = torch.stack([ae_mat[:, p[0], p[1]] for p in polygon])
+
+                ae_loss += (ae_tensor + polygon_tensor - center_tensor).pow(2).sum(dim=1).sqrt().mean()
+
+            ae_losses.append(ae_loss)
+
         # compute mean loss
-        l_pull = torch.stack(l_pulls).mean()
-        l_push = torch.stack(l_pushs).mean()
-        l_center = torch.stack(l_centers).mean()
-        return self._alpha * l_pull, (1 - self._alpha) * l_push, self._beta * l_center
+        ae_loss = torch.stack(ae_losses).mean()
+        return [ae_loss]
 
 
 class ComposeLoss(nn.Module):
-    def __init__(self, cls_loss_fn, kp_loss_fn, ae_loss_fn):
+    def __init__(self, cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn):
         super(ComposeLoss, self).__init__()
         self._cls_loss_fn = cls_loss_fn
         self._kp_loss_fn = kp_loss_fn
         self._ae_loss_fn = ae_loss_fn
+        self._wh_loss_fn = wh_loss_fn
+
         self._loss_names = []
         self._loss_names.extend(cls_loss_fn.get_loss_names())
         self._loss_names.extend(kp_loss_fn.get_loss_names())
         self._loss_names.extend(ae_loss_fn.get_loss_names())
+        self._loss_names.extend(wh_loss_fn.get_loss_names())
+
         self._loss_names.append("total_loss")
 
     def forward(self, outputs, targets):
@@ -409,18 +271,20 @@ class ComposeLoss(nn.Module):
         hm_cls = outputs["hm_cls"]
         hm_kp = outputs["hm_kp"]
         hm_ae = outputs["hm_ae"]
+        hm_wh = outputs["hm_wh"]
 
         losses = []
         # compute losses
         losses.extend(self._cls_loss_fn(hm_cls, targets))
         losses.extend(self._kp_loss_fn(hm_kp, targets))
         losses.extend(self._ae_loss_fn(hm_ae, targets))
+        losses.extend(self._wh_loss_fn(hm_wh, targets))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()
         losses.append(total_loss)
 
-        return total_loss, {self._loss_names[i]:losses[i] for i in range(len(self._loss_names))}
+        return total_loss, {self._loss_names[i]: losses[i] for i in range(len(self._loss_names))}
 
     def get_loss_states(self):
         return self._loss_names

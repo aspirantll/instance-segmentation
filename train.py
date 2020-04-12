@@ -24,7 +24,7 @@ mox.file.shift('os', 'mox')
 
 import data
 from configs import Config
-from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, KPGACLoss, KPLSLoss, WHDLoss
+from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss, WHDLoss
 from utils.tranform import TrainTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
@@ -66,9 +66,6 @@ if isinstance(opt_cfg.lr, str):
 print("train dir:", data_cfg.train_dir)
 if not os.path.exists(data_cfg.train_dir):
     raise Exception("the train dir cannot be found.")
-print("val dir:", data_cfg.val_dir)
-if not os.path.exists(data_cfg.val_dir):
-    raise Exception("the val dir cannot be found.")
 print("save dir:", data_cfg.save_dir)
 if not os.path.exists(data_cfg.save_dir):
     os.makedirs(data_cfg.save_dir)
@@ -128,9 +125,11 @@ def get_optimizer(model, opt):
 
 def init_loss_fn():
     cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
+    # kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
     kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
-    ae_loss_fn = AELoss(device, alpha=loss_cfg.ae_alpha, beta=loss_cfg.ae_beta, delta=loss_cfg.ae_delta)
-    return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn)
+    ae_loss_fn = AELoss(device)
+    wh_loss_fn = WHLoss(device)
+    return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn)
 
 
 def load_state_dict(model, save_dir, pretrained):
@@ -154,7 +153,7 @@ def load_state_dict(model, save_dir, pretrained):
         model_dict.update(filtered_dict)
         model.load_state_dict(model_dict)
         model.init_weight()
-        executor.submit(save_checkpoint, model.state_dict(), 0, np.inf, data_cfg.save_dir)
+        # executor.submit(save_checkpoint, model.state_dict(), 0, np.inf, data_cfg.save_dir)
         logger.write("loaded the pretrained weights:" + pretrained)
     else:
         file_list = os.listdir(save_dir)
@@ -189,7 +188,7 @@ def write_metric(metric, epoch, phase):
     logger.close_summary_writer()
 
 
-def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, debug=False):
+def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
     """
     train model for a epoch
     :param model:
@@ -215,38 +214,42 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch, de
         # load data time
         data_time.update(time.time() - last)
         inputs, targets, infos = train_data
-        # to device
-        inputs = inputs.to(device)
-        # forward the models and loss
-        outputs = model(inputs)
-        loss, loss_stats = loss_fn(outputs, targets)
-        # update the weights
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        # network time and update time
-        batch_time.update(time.time() - last)
-        last = time.time()
-        # handle the log and accumulate the loss
-        logger.open_summary_writer()
-        log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
-            epoch, iter_id, num_iter, phase=phase, total=last - start)
-        for l in avg_loss_states:
-            if l in loss_stats:
-                avg_loss_states[l].update(
-                    loss_stats[l].item(), inputs.size(0))
-                log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
-                logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
-        logger.close_summary_writer()
-        running_loss.update(loss.item(), inputs.size(0))
-        log_item = log_item + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
-                                  '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)
+        try:
+            # to device
+            inputs = inputs.to(device)
+            # forward the models and loss
+            outputs = model(inputs)
+            loss, loss_stats = loss_fn(outputs, targets)
+            # update the weights
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            # network time and update time
+            batch_time.update(time.time() - last)
+            last = time.time()
+            # handle the log and accumulate the loss
+            logger.open_summary_writer()
+            log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
+                epoch, iter_id, num_iter, phase=phase, total=last - start)
+            for l in avg_loss_states:
+                if l in loss_stats:
+                    avg_loss_states[l].update(
+                        loss_stats[l].item(), inputs.size(0))
+                    log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
+                    logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
+            logger.close_summary_writer()
+            running_loss.update(loss.item(), inputs.size(0))
+            log_item = log_item + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
+                                      '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)
 
-        logger.write(log_item, level=1)
-        del inputs, loss
-        torch.cuda.empty_cache()
-        if (iter_id + 1) % cfg.save_span == 0:
-            executor.submit(save_checkpoint, model.state_dict(), epoch, running_loss.avg, args.save_dir, iter_id)
+            logger.write(log_item, level=1)
+            del inputs, loss
+            torch.cuda.empty_cache()
+            if (iter_id + 1) % cfg.save_span == 0:
+                executor.submit(save_checkpoint, model.state_dict(), epoch, running_loss.avg, data_cfg.save_dir, iter_id)
+        except RuntimeError as e:
+            print(infos)
+            raise e
     avg_loss_states["Total Loss"] = running_loss
     return running_loss, avg_loss_states
 
@@ -262,7 +265,7 @@ def train():
                                            phase="train", transforms=transforms, from_file=True)
 
     # initialize model, optimizer, loss_fn
-    model = ERFNet(data_cfg.num_classes, fixed_parts=None)
+    model = ERFNet(data_cfg.num_classes, fixed_parts=cfg.fixed_parts)
     start_epoch, best_loss = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
     optimizer = get_optimizer(model, opt_cfg)

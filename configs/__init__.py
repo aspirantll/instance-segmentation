@@ -11,6 +11,7 @@ __version__ = "1.0.0"
 
 import yaml
 
+
 class Config(object):
     def __init__(self, cfg_path=None, cfg=None):
         if cfg_path is None and cfg is None:
@@ -18,7 +19,7 @@ class Config(object):
         if cfg is None:
             with open(cfg_path, "r", encoding='utf-8') as f:
                 cfg_str = f.read()
-                self._cfg = yaml.load(cfg_str, Loader=yaml.FullLoader)
+                self._cfg = yaml.load(cfg_str)
         else:
             self._cfg = cfg
         # scan the configs, then set attribute

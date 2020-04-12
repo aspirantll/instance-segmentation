@@ -20,7 +20,7 @@ class DirDataset(data.Dataset):
     """
     the dataset for image dir.
     """
-    def __init__(self, data_dir, input_size, transforms=None):
+    def __init__(self, data_dir, input_size, transforms=None, from_file=False):
         # save the parameters
         self._data_dir = data_dir
         self._input_size=input_size
@@ -29,10 +29,8 @@ class DirDataset(data.Dataset):
         else:
             self._transforms = CommonTransforms(input_size)
         # scan the dir
-        self.imgs = []
-        for name in os.listdir(data_dir):
-            if name.endswith(r".jpg"):
-                self.imgs.append(name)
+        self.imgs = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(data_dir)) for f in
+                                fn if f.endswith(r".jpg") or f.endswith(r".png")]
 
     def __getitem__(self, index):
         # locating index

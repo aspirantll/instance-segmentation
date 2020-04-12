@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+from configs import Config
 from utils.tranform import CommonTransforms
 
 __copyright__ = \
@@ -16,14 +17,15 @@ __version__ = "1.0.0"
 import argparse
 import torch
 import os
+import cv2
 import numpy as np
 from utils.logger import Logger
 from models import ERFNet
 import data
+from utils import decode
 from utils.decode import decode_output
 from utils.visualize import visualize_instance
 from matplotlib import pyplot as plt
-from PIL import Image
 from utils import image
 
 
@@ -38,38 +40,35 @@ device = torch.device(device_type)
 
 # load arguments
 print("loading the arguments...")
-parser = argparse.ArgumentParser(description="training")
+parser = argparse.ArgumentParser(description="test")
 # add arguments
-parser.add_argument("--save_dir", help="the dir of saving result", dest="save_dir", required=True, type=str)
-parser.add_argument("--weights_path", help="the weights path", dest="weights_path", required=True, type=str)
-parser.add_argument("--test_dir", help="the dir of test", dest="test_dir", type=str)
-parser.add_argument("--test_image", help="the image of test", dest="test_image", type=str)
-parser.add_argument("--batch_size", dest="batch_size", default=32, type=int)
-parser.add_argument("--input_size", dest="input_size", default=(512, 1024), type=tuple)
-parser.add_argument("--seed", dest="seed", default=1, type=int)
-parser.add_argument("--num_classes", dest="num_classes", default=-1, type=int)
+parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/test_cfg.yaml", type=str)
 # parse args
 args = parser.parse_args()
-args.dataset = "dir"
-if args.num_classes == -1:
-    args.num_classes = data.get_cls_num(args.dataset)
+
+cfg = Config(args.cfg_path)
+data_cfg = cfg.data
+if data_cfg.num_classes == -1:
+    data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
+if isinstance(data_cfg.input_size, str):
+    data_cfg.input_size = eval(data_cfg.input_size)
 # validate the arguments
-print("test dir:", args.test_dir)
-if args.test_dir is not None and not os.path.exists(args.test_dir):
+print("test dir:", data_cfg.test_dir)
+if data_cfg.test_dir is not None and not os.path.exists(data_cfg.test_dir):
     raise Exception("the train dir cannot be found.")
 
-print("save dir:", args.save_dir)
-if not os.path.exists(args.save_dir):
-    os.makedirs(args.save_dir)
+print("save dir:", data_cfg.save_dir)
+if not os.path.exists(data_cfg.save_dir):
+    os.makedirs(data_cfg.save_dir)
 
 
 # set seed
-np.random.seed(args.seed)
-torch.random.manual_seed(args.seed)
+np.random.seed(cfg.seed)
+torch.random.manual_seed(cfg.seed)
 if use_cuda:
-    torch.cuda.manual_seed_all(args.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
 
-Logger.init_logger(args)
+Logger.init_logger(data_cfg)
 logger = Logger.get_logger()
 
 
@@ -80,9 +79,9 @@ def load_state_dict(model):
     :param save_dir:
     :return:
     """
-    checkpoint = torch.load(args.weights_path, map_location=device_type)
+    checkpoint = torch.load(cfg.weights_path, map_location=device_type)
     model.load_state_dict(checkpoint["state_dict"])
-    logger.write("loaded the weights:" + args.weights_path)
+    logger.write("loaded the weights:" + cfg.weights_path)
 
 
 def handle_output(inputs, infos, model, transforms):
@@ -97,15 +96,12 @@ def handle_output(inputs, infos, model, transforms):
             name = os.path.basename(img_path)
             det = dets[i]
             logger.write("in {} detected {} objs".format(name, len(det)))
+            img = cv2.imread(img_path)
             for j in range(len(det)):
-                # logger.write(det)
-                img = Image.open(img_path)
-                plt.figure(img_path + str(j))
-                plt.imshow(img)
-                visualize_instance([det[j]])
-                save_path = os.path.join(args.save_dir, str(j) + name)
-                plt.savefig(save_path)
-                logger.write("detected result saved in {}".format(save_path))
+                img = visualize_instance(img, [det[j]], mask=True)
+            save_path = os.path.join(data_cfg.save_dir, name)
+            cv2.imwrite(save_path, img)
+            logger.write("detected result saved in {}".format(save_path))
 
 
 def test():
@@ -115,18 +111,19 @@ def test():
     :return:
     """
     # initialize model
-    model = ERFNet(args.num_classes)
+    model = ERFNet(data_cfg.num_classes)
     load_state_dict(model)
     model = model.to(device)
 
     # test model
     model.eval()
-    transforms = CommonTransforms(args.input_size, args.num_classes)
+    transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes)
 
-    if args.test_dir is not None:
+    decode.device = device
+    if data_cfg.test_dir is not None:
         # initialize the dataloader by dir
-        test_dataloader = data.get_dataloader(args.batch_size, args.dataset, args.test_dir,
-                                               input_size=args.input_size,
+        test_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.test_dir,
+                                               input_size=data_cfg.input_size, with_label=False,
                                                phase="test", transforms=transforms)
         # foreach the images
         for iter_id, test_data in enumerate(test_dataloader):
@@ -134,7 +131,7 @@ def test():
             inputs, infos = test_data
             handle_output(inputs, infos, model, transforms)
     else:
-        img_path = args.test_image
+        img_path = data_cfg.test_image
         input_img = image.load_rgb_image(img_path)
         input, _, info = transforms(input_img, img_path=img_path)
         handle_output(input.unsqueeze(0), [info], model, transforms)
