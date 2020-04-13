@@ -42,16 +42,17 @@ if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
 
 
-def process_item(info_queue, dataset, target_dir, j, cover):
+def process_item(info_queue, dataset, target_dir, j, cover, filter_empty):
     filename = op.basename(dataset.filenames[j])[:-4] + ".npz"
     save_path = op.join(target_dir, filename)
     if cover or not op.exists(save_path):
         input_tensor, label, _ = dataset[j]
-        save_labels(input_tensor, label, save_path)
+        if not filter_empty or len(label[0])!=0:
+            save_labels(input_tensor, label, save_path)
     info_queue.put(j)
 
 
-def preprocess(cover=False):
+def preprocess(cover=False, filter_empty=True):
     for i in range(len(args.phases)):
         subset = args.phases[i]
         dataset = CityscapesDataset(data_cfg.train_dir, data_cfg.input_size, subset=subset)
@@ -63,7 +64,7 @@ def preprocess(cover=False):
         info_queue = multiprocessing.Manager().Queue()
         n = len(dataset)
         for j in range(n):
-            pool.apply_async(process_item, args=(info_queue, dataset, target_dir, j, cover))
+            pool.apply_async(process_item, args=(info_queue, dataset, target_dir, j, cover, filter_empty))
         pool.close()
         for j in tqdm(range(n), desc=subset):
             j = info_queue.get()

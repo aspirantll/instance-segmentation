@@ -22,7 +22,7 @@ from models import ERFNet
 from utils.mean_ap import eval_map
 from configs import Config
 from utils.logger import Logger
-from utils.decode import decode_output
+from utils import decode
 from utils.tranform import CommonTransforms
 
 # global torch configs for training
@@ -33,6 +33,9 @@ torch.set_default_dtype(torch.float32)
 use_cuda = torch.cuda.is_available()
 device_type ='cuda' if use_cuda else 'cpu'
 device = torch.device(device_type)
+
+decode.device = device
+decode.draw_flag = False
 
 # load arguments
 print("loading the arguments...")
@@ -103,7 +106,7 @@ def evaluate_model(eval_dataloader, transforms, weights_path):
         # forward the models and loss
         with torch.no_grad():
             outputs = model(inputs)
-            dets = decode_output(outputs, infos, transforms)
+            dets = decode.decode_output(outputs, infos, transforms)
 
         gt_labels = targets[1]
         # transform the pixel to original image
@@ -139,7 +142,7 @@ if __name__ == "__main__":
     transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes)
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.eval_dir,
                                            input_size=data_cfg.input_size,
-                                           phase="test", transforms=transforms, from_file=True)
+                                           phase="val", transforms=transforms, from_file=True)
     # eval
     print("start to evaluate...")
     evaluate_model(eval_dataloader, transforms, cfg.weights_path)

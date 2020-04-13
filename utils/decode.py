@@ -151,12 +151,14 @@ def aug_group(pts, center_loc, f=2):
     sorted_inds = np.argsort(polar_pts[:, 0])
     sorted_kp = np.array([pts[ind] for ind in sorted_inds])
 
+    area = image.poly_to_mask(sorted_kp).sum()
+    if area == 0:
+        return None
+
     n = sorted_kp.shape[0]
     r = np.max(np.vstack([np.sqrt(np.power(
         sorted_kp[(i+1) % n] - sorted_kp[i], 2).sum()) for i in range(n)])) * f
     bound_polygons = alphashape(pts, 1/r)
-
-    area = image.poly_to_mask(sorted_kp).sum()
 
     poly = filter_ghost_polygons(bound_polygons, center_loc)
     if poly is None and cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:

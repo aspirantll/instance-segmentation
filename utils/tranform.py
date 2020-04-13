@@ -22,11 +22,12 @@ TransInfo = namedtuple('TransInfo', ['img_path', 'img_size', 'flipped_flag'])
 
 
 class CommonTransforms(object):
-    def __init__(self, input_size, num_cls=None):
+    def __init__(self, input_size, num_cls=None, kp=True):
         if isinstance(input_size, tuple) or isinstance(input_size, list):
             input_size = np.array(input_size)
         self._input_size = input_size
         self._num_cls = num_cls
+        self._kp = kp
 
     def regular_size(self, img_size):
         size_flag = img_size[1] > img_size[0]
@@ -34,7 +35,7 @@ class CommonTransforms(object):
         input_size = self._input_size[::-1] if size_flag else self._input_size
         return size_flag, origin_size, input_size
 
-    def __call__(self, img, label=None, img_path=None, from_file=False, kp=True):
+    def __call__(self, img, label=None, img_path=None, from_file=False):
         """
         compose transform the all the transform
         :param img:  rgb and the shape is h*w*c
@@ -68,12 +69,13 @@ class CommonTransforms(object):
             # handle center
             centers = [polygon.mean(0).astype(np.int32) for polygon in polygons]
 
-            if kp:
+            if self._kp:
                 kp_mask = generate_kp_mask((1, 1, self._input_size[0], self._input_size[1]), [polygons], strategy="one-hot")
                 kp_target = torch.from_numpy(generate_batch_sdf(kp_mask))
-                label = (centers, cls_ids, polygons, box_sizes, kp_target[0])
+                kp_target = kp_target[0]
             else:
-                label = (centers, cls_ids, polygons, box_sizes)
+                kp_target = torch.tensor([])
+            label = (centers, cls_ids, polygons, box_sizes, kp_target)
 
         return input_tensor, label, TransInfo(img_path, img_size, False)
 
