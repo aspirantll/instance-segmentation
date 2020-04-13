@@ -182,7 +182,8 @@ def poly_to_mask(poly, img_size=None):
     if img_size is None:
         img_size = (poly.max(0) + 1)[::-1]
     mask = np.zeros(img_size, dtype=np.int32)
-    return cv2.fillPoly(mask, [poly], 1)
+    cv2.fillPoly(mask, [poly], 1)
+    return cv2.polylines(mask, [poly], True, 0)
 
 
 def compute_iou_for_mask(mask1, mask2):

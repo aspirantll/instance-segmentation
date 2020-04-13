@@ -24,8 +24,10 @@ from models import ERFNet
 from utils.mean_ap import eval_map
 from configs import Config
 from utils.logger import Logger
-from utils.decode import decode_output
+from utils import decode
 from utils.tranform import CommonTransforms
+import moxing as mox
+mox.file.shift('os', 'mox')
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True
@@ -35,6 +37,9 @@ torch.set_default_dtype(torch.float32)
 use_cuda = torch.cuda.is_available()
 device_type ='cuda' if use_cuda else 'cpu'
 device = torch.device(device_type)
+
+decode.device = device
+decode.draw_flag = False
 
 # load arguments
 print("loading the arguments...")
@@ -105,47 +110,52 @@ def evaluate_model(eval_dataloader, transforms, weights_path):
     for iter_id, eval_data in enumerate(eval_dataloader):
         # to device
         inputs, targets, infos = eval_data
-        inputs = inputs.to(device)
-        # forward the models and loss
-        with torch.no_grad():
-            outputs = model(inputs)
-            dets = decode_output(outputs, infos, transforms)
+        try:
+            inputs = inputs.to(device)
+            # forward the models and loss
+            with torch.no_grad():
+                outputs = model(inputs)
+                dets = decode.decode_output(outputs, infos, transforms)
 
-        gt_labels = targets[1]
-        # transform the pixel to original image
-        gt_polygons = [[transforms.transform_pixel(obj, infos[b_i]) for obj in targets[2][b_i]] for b_i in range(len(targets[2]))]
+            gt_labels = targets[1]
+            # transform the pixel to original image
+            gt_polygons = [[transforms.transform_pixel(obj, infos[b_i]) for obj in targets[2][b_i]] for b_i in range(len(targets[2]))]
 
-        # for b_i in range(len(gt_polygons)):
-        #     info = infos[b_i]
-        #     polygons = gt_polygons[b_i]
-        #     det = dets[b_i]
-        #
-        #     import cv2
-        #     from utils.visualize import visualize_instance
-        #     img = cv2.imread(info.img_path)
-        #     for j in range(len(det)):
-        #         det_polys = det[j][-1]
-        #         img = visualize_instance(img, [det_polys], mask=True)
-        #     save_path = os.path.join(data_cfg.save_dir, "det_{}".format(os.path.basename(info.img_path)))
-        #     cv2.imwrite(save_path, img)
-        #     img = cv2.imread(info.img_path)
-        #     for j in range(len(polygons)):
-        #         img = visualize_instance(img, [polygons[j]], mask=True)
-        #     save_path = os.path.join(data_cfg.save_dir, "gt_{}".format(os.path.basename(info.img_path)))
-        #     cv2.imwrite(save_path, img)
-        #     logger.write("detected result saved in {}".format(save_path))
-        del inputs
-        torch.cuda.empty_cache()
-        logger.write("[{}/{}] evaluation".format(iter_id, num_iter))
-        mean_ap, eval_result = eval_map(dets, gt_polygons, gt_labels, data_cfg.num_classes
-                                        , meters, print_summary=True, dataset=data_cfg.dataset)
+            # for b_i in range(len(gt_polygons)):
+            #     info = infos[b_i]
+            #     polygons = gt_polygons[b_i]
+            #     det = dets[b_i]
+            #
+            #     import cv2
+            #     from utils.visualize import visualize_instance
+            #     img = cv2.imread(info.img_path)
+            #     for j in range(len(det)):
+            #         det_polys = det[j][-1]
+            #         img = visualize_instance(img, [det_polys], mask=True)
+            #     save_path = os.path.join(data_cfg.save_dir, "det_{}".format(os.path.basename(info.img_path)))
+            #     cv2.imwrite(save_path, img)
+            #     img = cv2.imread(info.img_path)
+            #     for j in range(len(polygons)):
+            #         img = visualize_instance(img, [polygons[j]], mask=True)
+            #     save_path = os.path.join(data_cfg.save_dir, "gt_{}".format(os.path.basename(info.img_path)))
+            #     cv2.imwrite(save_path, img)
+            #     logger.write("detected result saved in {}".format(save_path))
+            del inputs
+            torch.cuda.empty_cache()
+            logger.write("[{}/{}] evaluation".format(iter_id, num_iter))
+            mean_ap, eval_result = eval_map(dets, gt_polygons, gt_labels, data_cfg.num_classes
+                                            , meters, print_summary=True, dataset=data_cfg.dataset)
+
+        except RuntimeError as e:
+            print(infos)
+            raise e
 
 
 if __name__ == "__main__":
     transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes)
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.eval_dir,
                                            input_size=data_cfg.input_size,
-                                           phase="test", transforms=transforms, from_file=True)
+                                           phase="val", transforms=transforms, from_file=True)
     # eval
     print("start to evaluate...")
     evaluate_model(eval_dataloader, transforms, cfg.weights_path)

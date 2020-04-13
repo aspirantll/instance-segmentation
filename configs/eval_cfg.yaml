@@ -2,10 +2,10 @@ data:
   eval_dir:  s3://hyy-coco/datasets/cityscapes
   save_dir: s3://hyy-coco/checkpoints/eval
   dataset: cityscapes
-  batch_size: 16
+  batch_size: 8
   input_size: (512, 1024)
   num_classes: -1
 
 seed: 1
-weights_path: C:\data\checkpoints\erf\model_weights_00000262.pth
+weights_path: s3://hyy-coco/checkpoints/model_weights_00000262.pth
 weights_dir:
