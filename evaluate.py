@@ -21,7 +21,7 @@ import torch
 import numpy as np
 import data
 from models import ERFNet
-from utils.mean_ap import eval_map
+from utils.mean_ap import eval_map, print_map_summary
 from configs import Config
 from utils.logger import Logger
 from utils import decode
@@ -76,6 +76,8 @@ if use_cuda:
 
 Logger.init_logger(data_cfg)
 logger = Logger.get_logger()
+eval_labels = data.get_eval_labels(data_cfg.dataset)
+label_names = [label[1] for label in eval_labels]
 
 
 def load_state_dict(model, weights_path):
@@ -88,6 +90,7 @@ def load_state_dict(model, weights_path):
     checkpoint = torch.load(weights_path, map_location=device_type)
     model.load_state_dict(checkpoint["state_dict"])
     logger.write("loaded the weights:" + weights_path)
+    return checkpoint["epoch"]
 
 
 def evaluate_model(eval_dataloader, transforms, weights_path):
@@ -99,56 +102,70 @@ def evaluate_model(eval_dataloader, transforms, weights_path):
     """
     # initialize
     model = ERFNet(data_cfg.num_classes)
-    load_state_dict(model, weights_path)
+    epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
     model.eval()
     num_iter = len(eval_dataloader)
 
-    meters = [APMeter(1) for i in range(data_cfg.num_classes)]
+    mAP, eval_results = None, None
+    meters = [APMeter(1) for label in eval_labels]
     # foreach the images
-    for iter_id, eval_data in enumerate(eval_dataloader):
+    for iter_id, eval_data in tqdm(enumerate(eval_dataloader), total=num_iter, desc="eval for epoch {}".format(epoch)):
         # to device
         inputs, targets, infos = eval_data
-        try:
-            inputs = inputs.to(device)
-            # forward the models and loss
-            with torch.no_grad():
-                outputs = model(inputs)
-                dets = decode.decode_output(outputs, infos, transforms)
+        inputs = inputs.to(device)
+        # forward the models and loss
+        with torch.no_grad():
+            outputs = model(inputs)
+            dets = decode.decode_output(outputs, infos, transforms)
+        del inputs
+        torch.cuda.empty_cache()
 
-            gt_labels = targets[1]
-            # transform the pixel to original image
-            gt_polygons = [[transforms.transform_pixel(obj, infos[b_i]) for obj in targets[2][b_i]] for b_i in range(len(targets[2]))]
+        gt_labels = targets[1]
+        # transform the pixel to original image
+        gt_polygons = [[transforms.transform_pixel(obj, infos[b_i]) for obj in targets[2][b_i]] for b_i in range(len(targets[2]))]
 
-            # for b_i in range(len(gt_polygons)):
-            #     info = infos[b_i]
-            #     polygons = gt_polygons[b_i]
-            #     det = dets[b_i]
-            #
-            #     import cv2
-            #     from utils.visualize import visualize_instance
-            #     img = cv2.imread(info.img_path)
-            #     for j in range(len(det)):
-            #         det_polys = det[j][-1]
-            #         img = visualize_instance(img, [det_polys], mask=True)
-            #     save_path = os.path.join(data_cfg.save_dir, "det_{}".format(os.path.basename(info.img_path)))
-            #     cv2.imwrite(save_path, img)
-            #     img = cv2.imread(info.img_path)
-            #     for j in range(len(polygons)):
-            #         img = visualize_instance(img, [polygons[j]], mask=True)
-            #     save_path = os.path.join(data_cfg.save_dir, "gt_{}".format(os.path.basename(info.img_path)))
-            #     cv2.imwrite(save_path, img)
-            #     logger.write("detected result saved in {}".format(save_path))
-            del inputs
-            torch.cuda.empty_cache()
-            logger.write("[{}/{}] evaluation".format(iter_id, num_iter))
-            mean_ap, eval_result = eval_map(dets, gt_polygons, gt_labels, data_cfg.num_classes
-                                            , meters, print_summary=True, dataset=data_cfg.dataset)
+        mAP, eval_results = eval_map(dets, gt_polygons, gt_labels,eval_labels, meters, print_summary=False, dataset=data_cfg.dataset)
+    return epoch, mAP, eval_results
 
-        except RuntimeError as e:
-            print(infos)
-            raise e
+
+def load_weight_paths(weights_dir):
+    weight_paths = []
+
+    file_list = os.listdir(weights_dir)
+    file_list.sort(reverse=True)
+    for file in file_list:
+        if file.startswith("model_weights_") and file.endswith(".pth"):
+            weight_path = os.path.join(weights_dir, file)
+            weight_paths.append(weight_path)
+    return weight_paths
+
+
+def eval_weights_dir(weights_dir):
+    weight_paths = load_weight_paths(weights_dir)
+    logger.write("the num of weights file: {}".format(len(weight_paths)))
+    for weight_path in weight_paths:
+        epoch, mAP, eval_result = evaluate_model(eval_dataloader, transforms, weight_path)
+        logger.write("epoch {}, mAP:{}".format(epoch, mAP))
+        print_map_summary(mAP, eval_result, label_names)
+
+        items = ['recall', 'precision', 'ap']
+        logger.open_summary_writer()
+        for l_i in range(len(label_names)):
+            eval_dict = eval_result[l_i]
+            label_name = label_names[l_i]
+
+            for item in items:
+                value = eval_dict[item]
+                if isinstance(value, np.ndarray):
+                    if len(value) == 0:
+                        value = 0
+                    else:
+                        value = value[-1]
+                logger.scalar_summary(label_name+"_"+item, value, epoch)
+        logger.scalar_summary("mAP", mAP, epoch)
+        logger.close_summary_writer()
 
 
 if __name__ == "__main__":
@@ -158,5 +175,9 @@ if __name__ == "__main__":
                                            phase="val", transforms=transforms, from_file=True)
     # eval
     print("start to evaluate...")
-    evaluate_model(eval_dataloader, transforms, cfg.weights_path)
+    if cfg.weights_dir is None:
+        _, mAP, eval_result = evaluate_model(eval_dataloader, transforms, cfg.weights_path)
+        print_map_summary(mAP, eval_result, label_names)
+    else:
+        eval_weights_dir(cfg.weights_dir)
     logger.close()

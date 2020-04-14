@@ -7,5 +7,5 @@ data:
   num_classes: -1
 
 seed: 1
-weights_path: s3://hyy-coco/checkpoints/model_weights_00000262.pth
-weights_dir:
+weights_path: # s3://hyy-coco/checkpoints/model_weights_00000262.pth
+weights_dir: s3://hyy-coco/checkpoints/

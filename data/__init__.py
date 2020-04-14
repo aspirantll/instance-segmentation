@@ -24,13 +24,13 @@ datasetClsNumMap = {
     "cityscapes": cityscapes.num_cls
 }
 
-datasetClsNameMap = {
-    "cityscapes": cityscapes.label_names
+datasetEvalLabelMap = {
+    "cityscapes": cityscapes.eval_labels
 }
 
 
-def get_cls_names(datatype):
-    return datasetClsNameMap[datatype]
+def get_eval_labels(datatype):
+    return datasetEvalLabelMap[datatype]
 
 
 def get_cls_num(datatype):
