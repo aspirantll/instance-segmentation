@@ -108,8 +108,6 @@ labels = [
 
 # Please refer to the main method below for example usages!
 
-# label names
-label_names = [label.name for label in labels][1:]
 # name to label object
 name2label      = { label.name    : label for label in labels           }
 # id to label object
@@ -118,6 +116,12 @@ id2label        = { label.id      : label for label in labels           }
 trainId2label   = { label.trainId : label for label in reversed(labels) }
 # name to index
 name2index = {label.name : iter_id for iter_id, label in enumerate(labels)}
+# eval label
+eval_labels = []
+for iter_id, label in enumerate(labels):
+    if label.hasInstances and not label.ignoreInEval:
+        eval_labels.append((iter_id, label.name))
+
 # category to list of label objects
 category2labels = {}
 for label in labels:

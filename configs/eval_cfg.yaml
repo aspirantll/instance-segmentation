@@ -7,5 +7,5 @@ data:
   num_classes: -1
 
 seed: 1
-weights_path: C:\data\checkpoints\erf\model_weights_00000214.pth
-weights_dir:
+weights_path: #C:\data\checkpoints\erf\model_weights_00000214.pth
+weights_dir:  C:\data\checkpoints\erf

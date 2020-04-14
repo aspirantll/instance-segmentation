@@ -179,7 +179,7 @@ def get_cls_results(det_results, gt_polygons, gt_labels, gt_ignore, class_id):
 def eval_map(det_results,
              gt_polygons,
              gt_labels,
-             num_classes,
+             eval_labels,
              meters,
              gt_ignore=None,
              scale_ranges=None,
@@ -193,7 +193,7 @@ def eval_map(det_results,
         gt_polygons (list): ground truth bboxes of each image, a list of K*4
             array.
         gt_labels (list): ground truth labels of each image, a list of K array
-        num_classes (int): the number of classes, include unlabeled
+        eval_labels (list): the number of classes, include unlabeled
         meters (list): the length is equal to num_classes
         gt_ignore (list): gt ignore indicators of each image, a list of K array
         scale_ranges (list, optional): [(min1, max1), (min2, max2), ...]
@@ -207,7 +207,7 @@ def eval_map(det_results,
         tuple: (mAP, [dict, dict, ...])
     """
     assert len(det_results) == len(gt_polygons) == len(gt_labels)
-    assert len(meters) == num_classes
+    assert len(meters) == len(eval_labels)
     if gt_ignore is not None:
         assert len(gt_ignore) == len(gt_labels)
         for i in range(len(gt_ignore)):
@@ -218,10 +218,11 @@ def eval_map(det_results,
 
     eval_results = []
 
-    for i in range(1, num_classes):
+    label_ids, label_names = tuple(zip(*eval_labels))
+    for i, train_id in enumerate(label_ids):
         # get gt and det bboxes of this class
         poly_dets, conf_dets, cls_gts, cls_gt_ignore = get_cls_results(
-            det_results, gt_polygons, gt_labels, gt_ignore, i)
+            det_results, gt_polygons, gt_labels, gt_ignore, train_id)
         # calculate tp and fp for each image
         tpfp = [
             tpfp_default(poly_dets[j], conf_dets[j], cls_gts[j], cls_gt_ignore[j], iou_thr,
@@ -265,18 +266,18 @@ def eval_map(det_results,
                 aps.append(cls_result['ap'])
         mean_ap = np.array(aps).mean().item() if aps else 0.0
     if print_summary:
-        print_map_summary(mean_ap, eval_results, dataset)
+        print_map_summary(mean_ap, eval_results, label_names)
 
     return mean_ap, eval_results
 
 
-def print_map_summary(mean_ap, results, dataset=None):
+def print_map_summary(mean_ap, results, label_names):
     """Print mAP and results of each class.
 
     Args:
         mean_ap(float): calculated from `eval_map`
         results(list): calculated from `eval_map`
-        dataset(None or str or list): dataset name or dataset classes.
+        label_names(None or str or list): dataset name or dataset classes.
     """
     num_scales = len(results[0]['ap']) if isinstance(results[0]['ap'],
                                                      np.ndarray) else 1
@@ -293,13 +294,6 @@ def print_map_summary(mean_ap, results, dataset=None):
                 cls_result['precision'], ndmin=2)[:, -1]
         aps[:, i] = cls_result['ap']
         num_gts[:, i] = cls_result['num_gts']
-
-    if dataset is None:
-        label_names = [str(i) for i in range(1, num_classes + 1)]
-    elif isinstance(dataset, str):
-        label_names = data.get_cls_names(dataset)
-    else:
-        label_names = dataset
 
     if not isinstance(mean_ap, list):
         mean_ap = [mean_ap]

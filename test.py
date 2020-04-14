@@ -23,7 +23,6 @@ from utils.logger import Logger
 from models import ERFNet
 import data
 from utils import decode
-from utils.decode import decode_output
 from utils.visualize import visualize_instance
 from matplotlib import pyplot as plt
 from utils import image
@@ -37,6 +36,9 @@ torch.set_default_dtype(torch.float32)
 use_cuda = torch.cuda.is_available()
 device_type ='cuda' if use_cuda else 'cpu'
 device = torch.device(device_type)
+
+decode.device = device
+decode.draw_flag = True
 
 # load arguments
 print("loading the arguments...")
@@ -89,7 +91,7 @@ def handle_output(inputs, infos, model, transforms):
     # forward the models and loss
     with torch.no_grad():
         outputs = model(inputs)
-        dets = decode_output(outputs, infos, transforms)
+        dets = decode.decode_output(outputs, infos, transforms)
         for i in range(len(dets)):
             info = infos[i]
             img_path = info.img_path
@@ -98,7 +100,8 @@ def handle_output(inputs, infos, model, transforms):
             logger.write("in {} detected {} objs".format(name, len(det)))
             img = cv2.imread(img_path)
             for j in range(len(det)):
-                img = visualize_instance(img, [det[j]], mask=True)
+                obj = det[j][-1]
+                img = visualize_instance(img, [obj], mask=True)
             save_path = os.path.join(data_cfg.save_dir, name)
             cv2.imwrite(save_path, img)
             logger.write("detected result saved in {}".format(save_path))
