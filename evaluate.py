@@ -111,7 +111,7 @@ def evaluate_model(eval_dataloader, transforms, weights_path):
     mAP, eval_results = None, None
     meters = [APMeter(1) for label in eval_labels]
     # foreach the images
-    for iter_id, eval_data in tqdm(enumerate(eval_dataloader), total=num_iter, desc="eval for epoch {}".format(epoch)):
+    for iter_id, eval_data in enumerate(eval_dataloader):
         # to device
         inputs, targets, infos = eval_data
         inputs = inputs.to(device)
@@ -127,6 +127,8 @@ def evaluate_model(eval_dataloader, transforms, weights_path):
         gt_polygons = [[transforms.transform_pixel(obj, infos[b_i]) for obj in targets[2][b_i]] for b_i in range(len(targets[2]))]
 
         mAP, eval_results = eval_map(dets, gt_polygons, gt_labels,eval_labels, meters, print_summary=False, dataset=data_cfg.dataset)
+
+        logger.write("eval for epoch {}:[{}/{}]".format(epoch, iter_id+1, num_iter))
     return epoch, mAP, eval_results
 
 
@@ -144,9 +146,10 @@ def load_weight_paths(weights_dir):
 
 def eval_weights_dir(weights_dir):
     weight_paths = load_weight_paths(weights_dir)
-    logger.write("the num of weights file: {}".format(len(weight_paths)))
-    for weight_path in weight_paths:
-        epoch, mAP, eval_result = evaluate_model(eval_dataloader, transforms, weight_path)
+    num_weights = len(weight_paths)
+    logger.write("the num of weights file: {}".format(num_weights))
+    for i in range(0,num_weights, 5):
+        epoch, mAP, eval_result = evaluate_model(eval_dataloader, transforms, weight_paths[i])
         logger.write("epoch {}, mAP:{}".format(epoch, mAP))
         print_map_summary(mAP, eval_result, label_names)
 
