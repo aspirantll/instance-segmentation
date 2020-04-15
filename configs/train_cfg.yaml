@@ -6,6 +6,7 @@ data:
   batch_size: 8
   input_size: (512, 1024)
   num_classes: -1
+  from_file: True
 
 optimizer:
   lr: 2e-4
@@ -26,6 +27,7 @@ max_iter: -1
 num_epochs: 2000
 save_span: 1000
 seed: 1
-fixed_parts: []
-pretrained_path: #s3://hyy-coco/checkpoints/model_weights_00000000.pth
-
+fixed_parts: ["encoder"]
+pretrained_path: s3://hyy-coco/checkpoints/erfnet_encoder_pretrained.pth
+decode_cfg_path: .\configs\decode_cfg.yaml
+start_eval_epoch: 20

@@ -175,11 +175,11 @@ class ERFNet(nn.Module):
         return out
 
     def init_weight(self):
-        def init_model_weights(layers, method="xavier", std=0.01, f=False, pi=0.01):
+        def init_model_weights(layers, method="xavier", std=0.01, bias=None):
             """
             init the weights for model
             :param layers:
-            :param method: kaiming, xavier
+            :param method: kaiming, xavier, None
             :param std: for normalize
             :param f: use focal loss
             :param pi: focal loss, foreground/background
@@ -193,20 +193,27 @@ class ERFNet(nn.Module):
                         torch.nn.init.xavier_normal_(m.weight.data)
                     elif method == "uniform":
                         torch.nn.init.uniform_(m.weight)
-                    else:
+                    elif method == "normal":
                         torch.nn.init.normal_(m.weight, std=std)
 
                     if m.bias is not None:
                         torch.nn.init.constant_(m.bias, 0)
-            if f:
-                torch.nn.init.constant_(layers.output_conv.bias, -log((1-pi)/pi))
+                elif isinstance(m, nn.ConvTranspose2d):
+                    nn.init.normal_(m.weight, std=0.001)
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.BatchNorm2d):
+                    nn.init.constant_(m.weight, 1)
+                    nn.init.constant_(m.bias, 0)
+            if bias is not None:
+                torch.nn.init.constant_(layers.output_conv.bias, bias)
 
         # hm_cls
-        #init_model_weights(self.hm_cls, method="normal", std=0.01, pi=1e-6)
+        init_model_weights(self.hm_cls, method="None", bias=-2.19)
         # hm_kp
-        #init_model_weights(self.hm_kp, method="normal", std=0.01, pi=1e-3)
+        init_model_weights(self.hm_kp, method="None", bias=-2.19)
         # hm_wh
-        #init_model_weights(self.hm_wh, method="normal", std=0.1, pi=1e-3)
+        init_model_weights(self.hm_wh, method="normal", std=0.001)
         # hm_ae
-        init_model_weights(self.hm_ae, method="normal", std=0.1, pi=1e-3)
+        init_model_weights(self.hm_ae, method="normal", std=0.001)
 

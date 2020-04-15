@@ -25,9 +25,10 @@ mox.file.shift('os', 'mox')
 import data
 from configs import Config
 from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss, WHDLoss
-from utils.tranform import TrainTransforms
+from utils.tranform import TrainTransforms, CommonTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
+from utils.eval_util import evaluate_model
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True
@@ -54,6 +55,7 @@ cfg = Config(args.cfg_path)
 data_cfg = cfg.data
 opt_cfg = cfg.optimizer
 loss_cfg = cfg.loss
+decode_cfg = Config(cfg.decode_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
@@ -83,12 +85,12 @@ logger = Logger.get_logger()
 executor = ThreadPoolExecutor(max_workers=3)
 
 
-def save_checkpoint(model_dict, epoch, best_loss, save_dir, iter_id=None):
+def save_checkpoint(model_dict, epoch, best_ap, save_dir, iter_id=None):
     """
     save the check points
     :param model_dict: the best model
     :param epoch: epoch
-    :param best_loss: best loss
+    :param best_ap: best ap
     :param save_dir: the checkpoint dir
     :param iter_id: the index of iter
     :return:
@@ -96,7 +98,7 @@ def save_checkpoint(model_dict, epoch, best_loss, save_dir, iter_id=None):
     checkpoint = {
         'state_dict': model_dict,
         'epoch': epoch,
-        'best_loss': best_loss
+        'best_ap': best_ap
     }
     if iter_id is None:
         weight_path = os.path.join(save_dir, "model_weights_{:0>8}.pth".format(epoch))
@@ -165,8 +167,8 @@ def load_state_dict(model, save_dir, pretrained):
                 model.load_state_dict(checkpoint["state_dict"])
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
-                best_loss = checkpoint["best_loss"] if "best_loss" in checkpoint else np.inf
-                return start_epoch + 1, best_loss
+                best_ap = checkpoint["best_ap"] if "best_ap" in checkpoint else 0
+                return start_epoch + 1, best_ap
         model.init_weight()
     return 0, np.inf
 
@@ -228,7 +230,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
             batch_time.update(time.time() - last)
             last = time.time()
             # handle the log and accumulate the loss
-            logger.open_summary_writer()
+            # logger.open_summary_writer()
             log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
                 epoch, iter_id, num_iter, phase=phase, total=last - start)
             for l in avg_loss_states:
@@ -236,8 +238,8 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
                     avg_loss_states[l].update(
                         loss_stats[l].item(), inputs.size(0))
                     log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
-                    logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
-            logger.close_summary_writer()
+                    # logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
+            # logger.close_summary_writer()
             running_loss.update(loss.item(), inputs.size(0))
             log_item = log_item + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
                                       '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)
@@ -260,13 +262,18 @@ def train():
     :return:
     """
     # initialize the dataloader by dir
-    transforms = TrainTransforms(data_cfg.input_size, data_cfg.num_classes, with_flip=True, with_aug_color=True)
+    train_transforms = TrainTransforms(data_cfg.input_size, data_cfg.num_classes, with_flip=True, with_aug_color=True)
     train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir, input_size=data_cfg.input_size,
-                                           phase="train", transforms=transforms, from_file=True)
+                                           phase="train", transforms=train_transforms, from_file=data_cfg.from_file)
+
+    eval_transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes, kp=False)
+    eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
+                                           input_size=data_cfg.input_size,
+                                           phase="val", transforms=eval_transforms)
 
     # initialize model, optimizer, loss_fn
     model = ERFNet(data_cfg.num_classes, fixed_parts=cfg.fixed_parts)
-    start_epoch, best_loss = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
+    start_epoch, best_ap = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
     optimizer = get_optimizer(model, opt_cfg)
     loss_fn = init_loss_fn()
@@ -276,15 +283,15 @@ def train():
     for epoch in range(start_epoch, cfg.num_epochs):
         # each epoch includes two phase: train,val
         train_loss, train_loss_states = train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch)
-        executor.submit(save_checkpoint, model.state_dict(), epoch, best_loss, data_cfg.save_dir)
         write_metric(train_loss_states, epoch, "train")
-        # val_loss, val_loss_states = val_model_for_epoch(model, val_dataloader, loss_fn, epoch, logger)
-        # write_metric(val_loss_states, epoch, "val")
-        # judge the model. if model is greater than current best loss
-        # if best_loss > train_loss.avg:
-        #     best_loss = train_loss.avg
-        #     executor.submit(save_checkpoint, model.state_dict(), epoch, best_loss, data_cfg.save_dir)
-    logger.write("the best loss:{}".format(best_loss))
+
+        if epoch >= cfg.start_eval_epoch:
+            epoch, mAP, eval_results = evaluate_model(eval_dataloader, eval_transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+            # judge the model. if model is greater than current best loss
+            if best_ap < mAP:
+                best_ap = mAP
+        executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
+    logger.write("the best mAP:{}".format(best_ap))
     logger.close()
     executor.shutdown(wait=True)
 

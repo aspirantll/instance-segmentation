@@ -68,7 +68,7 @@ def visualize_box(img, centers, box_sizes, center_color=(255, 0, 0), mask=False)
     for center, box_size in zip(centers, box_sizes):
         w, h = box_size//2
         c_w, c_h = center.astype(np.int32)
-        img = cv2.circle(img, (c_h, c_w), 1, center_color, 2)
+        img = cv2.circle(img, (c_w, c_h), 1, center_color, 2)
 
         box = np.array([[c_w - w, c_h - h],
                                           [c_w - w, c_h + h],

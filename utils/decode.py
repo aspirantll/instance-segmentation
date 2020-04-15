@@ -1,5 +1,3 @@
-from utils import image
-
 __copyright__ = \
     """
     Copyright &copyright © (c) 2020 The Board of xx University.
@@ -13,6 +11,7 @@ __version__ = "1.0.0"
 
 import os
 from typing import Iterable
+from utils import image
 from alphashape import alphashape
 import cv2
 import torch
@@ -21,9 +20,6 @@ import numpy as np
 from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
-
-device = None
-draw_flag = False
 
 
 def to_numpy(tensor):
@@ -132,7 +128,7 @@ def filter_ghost_polygons(polygons, center):
     return max_poly
 
 
-def aug_group(pts, center_loc, f=2):
+def aug_group(pts, center_loc, alpha_ratio=2):
     """
     aug the points
     :param pts: n * 2
@@ -157,7 +153,7 @@ def aug_group(pts, center_loc, f=2):
 
     n = sorted_kp.shape[0]
     r = np.max(np.vstack([np.sqrt(np.power(
-        sorted_kp[(i+1) % n] - sorted_kp[i], 2).sum()) for i in range(n)])) * f
+        sorted_kp[(i+1) % n] - sorted_kp[i], 2).sum()) for i in range(n)])) * alpha_ratio
     bound_polygons = alphashape(pts, 1/r)
 
     poly = filter_ghost_polygons(bound_polygons, center_loc)
@@ -247,8 +243,7 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th=100):
     return keep_center_cls, keep_center_indexes, keep_center_confs, keep_center_whs
 
 
-def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, center_confs, infos, wh_delta=0.2
-             , allow_distance=12, min_pixels=4, k=1000):
+def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, center_confs, infos, decode_cfg, device):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -263,17 +258,18 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     # generate the centers
     centers_vector = torch.from_numpy(np.vstack(center_indexes)).float()
     # handle key point
-    kp_mask = select_points(hm_kp, k)
-    if draw_flag:
-        draw_kp_mask(kp_mask, transforms, k, infos, "bound")
+    kp_mask = select_points(hm_kp, decode_cfg.kp_th)
+    if decode_cfg.draw_flag:
+        draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, infos, "bound")
 
+    # clear the non-active part
     # clear the non-active part
     correspond_index = kp_mask.nonzero()
     active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t() + correspond_index.float()
-    correspond_vec, corrected_centers = kmeans(active_ae, objs_num, cluster_centers=centers_vector, device=device, allow_distance=allow_distance)
+    correspond_vec, corrected_centers = kmeans(active_ae, objs_num, cluster_centers=centers_vector, device=device, allow_distance=decode_cfg.allow_distance)
 
     d_matrix = (active_ae.unsqueeze(1) - corrected_centers.unsqueeze(0)).pow(2).sum(-1).sqrt()
-    correspond_mask = d_matrix < allow_distance
+    correspond_mask = d_matrix < decode_cfg.allow_distance
 
     # center pixel locations
     n_centers = []
@@ -296,18 +292,18 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         # transform to origin image pixel
         true_pixels = transforms.transform_pixel(true_pixels, infos)
         # filter the ghost point
-        x_mask = (x - (0.5 + wh_delta) * w < true_pixels[:, 0]) * (true_pixels[:, 0] < x + (0.5 + wh_delta) * w)
-        y_mask = (y - (0.5 + wh_delta) * h < true_pixels[:, 1]) * (true_pixels[:, 1] < y + (0.5 + wh_delta) * h)
+        x_mask = (x - (0.5 + decode_cfg.wh_delta) * w < true_pixels[:, 0]) * (true_pixels[:, 0] < x + (0.5 + decode_cfg.wh_delta) * w)
+        y_mask = (y - (0.5 + decode_cfg.wh_delta) * h < true_pixels[:, 1]) * (true_pixels[:, 1] < y + (0.5 + decode_cfg.wh_delta) * h)
         filter_mask = x_mask * y_mask
         # filter_mask = np.ones(kp_pixels.shape[0], dtype=np.bool)
-        if filter_mask.sum() < min_pixels:
+        if filter_mask.sum() < decode_cfg.obj_pixel_th:
             continue
 
         # augment the groups
-        np_poly = aug_group(true_pixels[filter_mask], center_loc)
+        np_poly = aug_group(true_pixels[filter_mask], center_loc, decode_cfg.alpha_ratio)
 
         if np_poly is not None:
-            if draw_flag:
+            if decode_cfg.draw_flag:
                 img = draw_candid(np_poly, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)),
                             img, (color[0] * (i+1) % 256, color[1] * (i+1) % 256, color[2] * (i+1) % 256))
             # put to groups
@@ -315,21 +311,21 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
             n_centers.append(center_loc)
             n_clss.append(center_cls[i])
             n_confs.append(center_confs[i])
-    if draw_flag:
+    if decode_cfg.draw_flag:
         cv2.imwrite(
             r'C:\data\checkpoints\test\{}_{}.png'.format(os.path.basename(infos.img_path), "candid"),
             img)
     return n_clss, n_confs, n_centers, kps
 
 
-def decode_output(outs, infos, transforms, kp_th=10000, cls_th=1000):
+def decode_output(outs, infos, transforms, decode_cfg, device):
     """
     decode the model output
     :param outs:
     :param infos:
-    :param kp_k:
-    :param cls_th:
-    :param min_pixels:
+    :param transforms:
+    :param decode_cfg:
+    :param device:
     :return:
     """
     # get output
@@ -350,16 +346,16 @@ def decode_output(outs, infos, transforms, kp_th=10000, cls_th=1000):
 
         # handle the center point
         max_conf_mat, cls_mat = hm_cls_mat.max(0)
-        center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, hm_wh_mat, hm_cls_mat.shape[0], cls_th)
-        if draw_flag:
+        center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, hm_wh_mat, hm_cls_mat.shape[0], decode_cfg.cls_th)
+        if decode_cfg.draw_flag:
             img = cv2.imread(info.img_path)
-            draw_kp(img, center_indexes, transforms, cls_th, info, "center")
+            draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")
             draw_box(center_whs, center_indexes, info, transforms)
 
         # group the key points
         center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, hm_ae_mat, transforms, center_whs
                                                                     , center_indexes, center_cls, center_confs, info,
-                                                                    k=kp_th)
+                                                                    decode_cfg, device)
 
         # append the results
         dets.append([e for e in zip(center_cls, center_confs, center_indexes, groups)])

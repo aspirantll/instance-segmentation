@@ -9,3 +9,4 @@ data:
 
 seed: 1
 weights_path: C:\data\checkpoints\erf\model_weights_00000214.pth
+decode_cfg_path: .\configs\decode_cfg.yaml

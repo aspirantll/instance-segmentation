@@ -27,7 +27,7 @@ class DirDataset(data.Dataset):
         if transforms is not None:
             self._transforms = transforms  # ADDED THIS
         else:
-            self._transforms = CommonTransforms(input_size)
+            self._transforms = CommonTransforms(input_size, kp=False)
         # scan the dir
         self.imgs = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(data_dir)) for f in
                                 fn if f.endswith(r".jpg") or f.endswith(r".png")]

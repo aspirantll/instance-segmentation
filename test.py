@@ -37,9 +37,6 @@ use_cuda = torch.cuda.is_available()
 device_type ='cuda' if use_cuda else 'cpu'
 device = torch.device(device_type)
 
-decode.device = device
-decode.draw_flag = True
-
 # load arguments
 print("loading the arguments...")
 parser = argparse.ArgumentParser(description="test")
@@ -50,6 +47,8 @@ args = parser.parse_args()
 
 cfg = Config(args.cfg_path)
 data_cfg = cfg.data
+decode_cfg = Config(cfg.decode_cfg_path)
+
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
 if isinstance(data_cfg.input_size, str):
@@ -91,7 +90,7 @@ def handle_output(inputs, infos, model, transforms):
     # forward the models and loss
     with torch.no_grad():
         outputs = model(inputs)
-        dets = decode.decode_output(outputs, infos, transforms)
+        dets = decode.decode_output(outputs, infos, transforms, decode_cfg, device)
         for i in range(len(dets)):
             info = infos[i]
             img_path = info.img_path
@@ -120,7 +119,7 @@ def test():
 
     # test model
     model.eval()
-    transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes)
+    transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes, kp=False)
 
     decode.device = device
     if data_cfg.test_dir is not None:

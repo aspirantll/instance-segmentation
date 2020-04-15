@@ -69,7 +69,7 @@ class CommonTransforms(object):
             # handle center
             centers = [polygon.mean(0).astype(np.int32) for polygon in polygons]
 
-            if self._kp:
+            if self._kp and len(cls_ids) != 0:
                 kp_mask = generate_kp_mask((1, 1, self._input_size[0], self._input_size[1]), [polygons], strategy="one-hot")
                 kp_target = torch.from_numpy(generate_batch_sdf(kp_mask))
                 kp_target = kp_target[0]
