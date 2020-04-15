@@ -25,7 +25,7 @@ datasetClsNumMap = {
 }
 
 datasetEvalLabelMap = {
-    "cityscapes": cityscapes.eval_labels
+    "cityscapes": cityscapes.eval_names
 }
 
 

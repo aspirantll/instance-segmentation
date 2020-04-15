@@ -5,7 +5,10 @@ data:
   batch_size: 2
   input_size: (512, 1024)
   num_classes: -1
+  subset: val
 
 seed: 1
-weights_path: #C:\data\checkpoints\erf\model_weights_00000214.pth
-weights_dir:  C:\data\checkpoints\erf
+weights_path: C:\data\checkpoints\erf\model_weights_00000000.pth
+weights_dir:  # C:\data\checkpoints\erf
+decode_cfg_path: .\configs\decode_cfg.yaml
+

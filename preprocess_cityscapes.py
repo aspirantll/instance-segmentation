@@ -26,8 +26,8 @@ print("loading the arguments...")
 parser = argparse.ArgumentParser(description="training")
 # add arguments
 parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/train_cfg.yaml", type=str)
-parser.add_argument("--phases", help="which phase", dest="phases", default=["train", "val", "test"], type=list)
-parser.add_argument("--workers", help="the num of worker process", dest="workers", default=3, type=list)
+parser.add_argument("--phases", help="which phase", dest="phases", default=["train"], type=list)
+parser.add_argument("--workers", help="the num of worker process", dest="workers", default=4, type=list)
 
 # parse args
 args = parser.parse_args()
