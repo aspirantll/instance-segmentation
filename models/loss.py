@@ -243,7 +243,7 @@ class AELoss(object):
 
                 ae_loss += (ae_tensor + polygon_tensor - center_tensor).pow(2).sum(dim=1).sqrt().mean()
 
-            ae_losses.append(ae_loss)
+            ae_losses.append(ae_loss / max(n, 0))
 
         # compute mean loss
         ae_loss = torch.stack(ae_losses).mean()

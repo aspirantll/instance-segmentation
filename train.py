@@ -77,12 +77,12 @@ logger = Logger.get_logger()
 executor = ThreadPoolExecutor(max_workers=3)
 
 
-def save_checkpoint(model_dict, epoch, best_loss, save_dir, iter_id=None):
+def save_checkpoint(model_dict, epoch, best_ap, save_dir, iter_id=None):
     """
     save the check points
     :param model_dict: the best model
     :param epoch: epoch
-    :param best_loss: best loss
+    :param best_ap: best mAP
     :param save_dir: the checkpoint dir
     :param iter_id: the index of iter
     :return:
@@ -90,7 +90,7 @@ def save_checkpoint(model_dict, epoch, best_loss, save_dir, iter_id=None):
     checkpoint = {
         'state_dict': model_dict,
         'epoch': epoch,
-        'best_loss': best_loss
+        'best_ap': best_ap
     }
     if iter_id is None:
         weight_path = os.path.join(save_dir, "model_weights_{:0>8}.pth".format(epoch))
@@ -221,7 +221,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
         batch_time.update(time.time() - last)
         last = time.time()
         # handle the log and accumulate the loss
-        logger.open_summary_writer()
+        # logger.open_summary_writer()
         log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
             epoch, iter_id, num_iter, phase=phase, total=last - start)
         for l in avg_loss_states:
@@ -229,8 +229,8 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
                 avg_loss_states[l].update(
                     loss_stats[l].item(), inputs.size(0))
                 log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
-                logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
-        logger.close_summary_writer()
+                # logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
+        # logger.close_summary_writer()
         running_loss.update(loss.item(), inputs.size(0))
         log_item = log_item + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
                                   '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)

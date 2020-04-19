@@ -4,4 +4,4 @@ allow_distance: 15
 obj_pixel_th: 4
 wh_delta: 0.2
 alpha_ratio: 2
-draw_flag: False
+draw_flag: True
