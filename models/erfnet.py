@@ -8,7 +8,6 @@ this code base on
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from math import log
 
 
 class DownsamplerBlock (nn.Module):
@@ -88,18 +87,12 @@ class Encoder(nn.Module):
             self.layers.append(non_bottleneck_1d(128, 0.3, 16))
 
     def forward(self, input):
-        # save the temp output for skip connection
-        outs = []
         output = self.initial_block(input)
-        outs.append(output.clone())
 
         for layer in self.layers:
             output = layer(output)
-            if isinstance(layer, DownsamplerBlock):
-                outs.append(output.clone())
 
-        outs.append(output)
-        return outs
+        return output
 
 
 class UpsamplerBlock (nn.Module):
@@ -132,12 +125,10 @@ class Decoder (nn.Module):
         self.output_conv = nn.ConvTranspose2d(
             16, num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
 
-    def forward(self, inputs):
-        output = inputs.pop()
+    def forward(self, input):
+        output = input
 
         for layer in self.layers:
-            if isinstance(layer, UpsamplerBlock):
-                output += inputs.pop()
             output = layer(output)
 
         output = self.output_conv(output)
@@ -148,7 +139,7 @@ class Decoder (nn.Module):
 
 
 class ERFNet(nn.Module):
-    def __init__(self, num_classes, fixed_parts=None):  # use encoder to pass pretrained encoder
+    def __init__(self, num_classes, fixed_parts=("encoder")):  # use encoder to pass pretrained encoder
         super().__init__()
         self.heads = {
             "hm_cls": num_classes,
@@ -171,7 +162,7 @@ class ERFNet(nn.Module):
         out = {}
         for head in self.heads:
             decoder = self.__getattr__(head)
-            out[head] = decoder([out.clone() for out in output])
+            out[head] = decoder(output)
         return out
 
     def init_weight(self):
