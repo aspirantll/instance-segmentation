@@ -1,15 +1,15 @@
 data:
-  train_dir:  s3://hyy-coco/datasets/cityscapes
-  val_dir:  s3://hyy-coco/datasets/cityscapes
-  save_dir: s3://hyy-coco/checkpoints
+  train_dir:  s3://ll-coco/datasets/cityscapes
+  val_dir:  s3://ll-coco/datasets/cityscapes
+  save_dir: s3://ll-coco/checkpoints
   dataset: cityscapes
-  batch_size: 8
+  batch_size: 4
   input_size: (512, 1024)
   num_classes: -1
   from_file: True
 
 optimizer:
-  lr: 2e-4
+  lr: 5e-4
   type: Adam
   momentum: 0.9
 
@@ -27,7 +27,7 @@ max_iter: -1
 num_epochs: 2000
 save_span: 1000
 seed: 1
-fixed_parts: ["encoder"]
-pretrained_path: s3://hyy-coco/checkpoints/erfnet_encoder_pretrained.pth
-decode_cfg_path: .\configs\decode_cfg.yaml
-start_eval_epoch: 20
+fixed_parts:  #["encoder"]
+pretrained_path: s3://ll-coco/checkpoints/erfnet_encoder_pretrained.pth
+decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml
+start_eval_epoch: 300

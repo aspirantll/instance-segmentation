@@ -232,7 +232,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
             # handle the log and accumulate the loss
             # logger.open_summary_writer()
             log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
-                epoch, iter_id, num_iter, phase=phase, total=last - start)
+                epoch, iter_id + 1, num_iter, phase=phase, total=last - start)
             for l in avg_loss_states:
                 if l in loss_stats:
                     avg_loss_states[l].update(
@@ -252,7 +252,6 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
         except RuntimeError as e:
             print(infos)
             raise e
-    avg_loss_states["Total Loss"] = running_loss
     return running_loss, avg_loss_states
 
 
@@ -284,13 +283,13 @@ def train():
         # each epoch includes two phase: train,val
         train_loss, train_loss_states = train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch)
         write_metric(train_loss_states, epoch, "train")
+        executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
 
         if epoch >= cfg.start_eval_epoch:
             epoch, mAP, eval_results = evaluate_model(eval_dataloader, eval_transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
             # judge the model. if model is greater than current best loss
             if best_ap < mAP:
                 best_ap = mAP
-        executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
     logger.write("the best mAP:{}".format(best_ap))
     logger.close()
     executor.shutdown(wait=True)

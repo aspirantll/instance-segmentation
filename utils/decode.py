@@ -223,7 +223,7 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th=100):
     keep_center_indexes = []
     keep_center_confs = []
     keep_center_whs = []
-    for c_i in range(1, num_classes):
+    for c_i in range(0, num_classes):
         select_indexes = center_cls == c_i
         if select_indexes.sum() == 0:
             continue
@@ -253,16 +253,16 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     :return: the groups
     """
     objs_num = len(center_indexes)
-    if objs_num == 0 or hm_kp.sum() == 0:
-        return [], [], [], []
-    # generate the centers
-    centers_vector = torch.from_numpy(np.vstack(center_indexes)).float()
     # handle key point
     kp_mask = select_points(hm_kp, decode_cfg.kp_th)
+    if objs_num == 0 or kp_mask.sum() == 0:
+        return [], [], [], []
+
+    # generate the centers
+    centers_vector = torch.from_numpy(np.vstack(center_indexes)).float()
     if decode_cfg.draw_flag:
         draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, infos, "bound")
 
-    # clear the non-active part
     # clear the non-active part
     correspond_index = kp_mask.nonzero()
     active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t() + correspond_index.float()

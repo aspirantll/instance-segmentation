@@ -1,12 +1,12 @@
 data:
-  test_dir: C:\data\cityscapes-simple\leftImg8bit\train
+  test_dir: s3://ll-coco/datasets/cityscapes/leftImg8bit/test
   test_image: #C:\data\checkpoints\erf\000000000026.jpg
-  save_dir: C:\data\checkpoints\test
+  save_dir: s3://ll-coco/checkpoints/test
   dataset: dir
   batch_size: 1
   input_size: (512, 1024)
   num_classes: 14
 
 seed: 1
-weights_path: C:\data\checkpoints\erf\model_weights_00000214.pth
-decode_cfg_path: .\configs\decode_cfg.yaml
+weights_path: s3://ll-coco/checkpoints/model_weights_00000214.pth
+decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml

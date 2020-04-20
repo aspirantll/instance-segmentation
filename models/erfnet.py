@@ -8,7 +8,6 @@ this code base on
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from math import log
 
 
 class DownsamplerBlock (nn.Module):
@@ -88,18 +87,12 @@ class Encoder(nn.Module):
             self.layers.append(non_bottleneck_1d(128, 0.3, 16))
 
     def forward(self, input):
-        # save the temp output for skip connection
-        outs = []
         output = self.initial_block(input)
-        outs.append(output.clone())
 
         for layer in self.layers:
             output = layer(output)
-            if isinstance(layer, DownsamplerBlock):
-                outs.append(output.clone())
 
-        outs.append(output)
-        return outs
+        return output
 
 
 class UpsamplerBlock (nn.Module):
@@ -132,12 +125,10 @@ class Decoder (nn.Module):
         self.output_conv = nn.ConvTranspose2d(
             16, num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
 
-    def forward(self, inputs):
-        output = inputs.pop()
+    def forward(self, input):
+        output = input
 
         for layer in self.layers:
-            if isinstance(layer, UpsamplerBlock):
-                output += inputs.pop()
             output = layer(output)
 
         output = self.output_conv(output)
@@ -171,7 +162,7 @@ class ERFNet(nn.Module):
         out = {}
         for head in self.heads:
             decoder = self.__getattr__(head)
-            out[head] = decoder([out.clone() for out in output])
+            out[head] = decoder(output)
         return out
 
     def init_weight(self):
@@ -198,20 +189,13 @@ class ERFNet(nn.Module):
 
                     if m.bias is not None:
                         torch.nn.init.constant_(m.bias, 0)
-                elif isinstance(m, nn.ConvTranspose2d):
-                    nn.init.normal_(m.weight, std=0.001)
-                    if m.bias is not None:
-                        nn.init.constant_(m.bias, 0)
-                elif isinstance(m, nn.BatchNorm2d):
-                    nn.init.constant_(m.weight, 1)
-                    nn.init.constant_(m.bias, 0)
             if bias is not None:
                 torch.nn.init.constant_(layers.output_conv.bias, bias)
 
         # hm_cls
-        init_model_weights(self.hm_cls, method="None", bias=-2.19)
+        init_model_weights(self.hm_cls, method="normal", std=0.01, bias=-2.19)
         # hm_kp
-        init_model_weights(self.hm_kp, method="None", bias=-2.19)
+        init_model_weights(self.hm_kp, method="normal", std=0.01, bias=-2.19)
         # hm_wh
         init_model_weights(self.hm_wh, method="normal", std=0.001)
         # hm_ae

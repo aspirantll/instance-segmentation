@@ -11,7 +11,6 @@ __version__ = "1.0.0"
 import torch
 import data
 import numpy as np
-from tqdm import tqdm
 from utils import decode
 from utils.mean_ap import eval_map, print_map_summary
 from utils.meter import APMeter
@@ -52,24 +51,29 @@ def evaluate_model(eval_dataloader, transforms, model, epoch, dataset, decode_cf
     mAP, eval_results = None, None
     meters = [APMeter(1) for label in eval_labels]
     # foreach the images
-    for iter_id, eval_data in tqdm(enumerate(eval_dataloader), total=num_iter, desc="eval for epoch {}".format(epoch)):
+    for iter_id, eval_data in enumerate(eval_dataloader):
         # to device
         inputs, targets, infos = eval_data
-        inputs = inputs.to(device)
-        # forward the models and loss
-        with torch.no_grad():
-            outputs = model(inputs)
-            dets = decode.decode_output(outputs, infos, transforms, decode_cfg, device)
-        del inputs
-        torch.cuda.empty_cache()
+        try:
+            inputs = inputs.to(device)
+            # forward the models and loss
+            with torch.no_grad():
+                outputs = model(inputs)
+                dets = decode.decode_output(outputs, infos, transforms, decode_cfg, device)
+            del inputs
+            torch.cuda.empty_cache()
 
-        gt_labels = targets[1]
-        # transform the pixel to original image
-        gt_polygons = [[transforms.transform_pixel(obj, infos[b_i]) for obj in targets[2][b_i]] for b_i in
-                       range(len(targets[2]))]
+            gt_labels = targets[1]
+            # transform the pixel to original image
+            gt_polygons = [[transforms.transform_pixel(obj, infos[b_i]) for obj in targets[2][b_i]] for b_i in
+                           range(len(targets[2]))]
 
-        mAP, eval_results = eval_map(dets, gt_polygons, gt_labels, eval_labels, meters, print_summary=False,
-                                     dataset=dataset)
+            mAP, eval_results = eval_map(dets, gt_polygons, gt_labels, eval_labels, meters, print_summary=False,
+                                         dataset=dataset)
+            print("[{}/{}] evaluation".format(iter_id + 1, num_iter))
+        except Exception as e:
+            print(infos)
+            raise e
 
     if logger is not None:
         print_eval_results(epoch, mAP, eval_results, logger, label_names)

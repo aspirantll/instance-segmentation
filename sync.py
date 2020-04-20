@@ -67,14 +67,14 @@ def download(obsClient, local_dir, remote_dir, delete_flag):
         time.sleep(150)
 
 
-def upload(obsClient, local_dirs, remote_dir, cover_flag):
-    if type(local_dirs) == str:
-        local_dirs = [local_dirs]
+def upload(obsClient, local_dir, remote_dir, cover_flag, extension):
     exist_set = scan_remote(obsClient, remote_dir)
-    for local_dir in local_dirs:
-        for name in os.listdir(local_dir):
-            local_name = os.path.join(local_dir, name)
-            remote_name = os.path.join(remote_dir, name)
+    for dp, dn, fn in os.walk(os.path.expanduser(local_dir)):
+        for f in fn:
+            if not f.endswith(extension):
+                continue
+            local_name = os.path.join(dp, f)
+            remote_name = local_name.replace(local_dir, remote_dir).replace('\\', '/')
             if cover_flag or remote_name not in exist_set:
                 resp = obsClient.putFile(bucketName, remote_name, file_path=local_name)
                 if resp.status < 300:
@@ -83,6 +83,7 @@ def upload(obsClient, local_dirs, remote_dir, cover_flag):
                 else:
                     print('errorCode:', resp.errorCode)
                     print('errorMessage:', resp.errorMessage)
+
 
 
 if __name__ == "__main__":
@@ -95,5 +96,9 @@ if __name__ == "__main__":
     remote_dir = r'checkpoints/logs/'
 
     download(obsClient, local_dir, remote_dir, False)
+
+    # local_dir = r"C:\data\cityscapes\preprocessed\train\\"
+    # remote_dir = r"datasets/cityscapes/preprocessed/train/"
+    # upload(obsClient, local_dir, remote_dir, False, ".npz")
 
     obsClient.close()

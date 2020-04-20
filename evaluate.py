@@ -135,7 +135,7 @@ if __name__ == "__main__":
     transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes, kp=False)
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.eval_dir,
                                            input_size=data_cfg.input_size,
-                                           phase=cfg.subset, transforms=transforms)
+                                           phase=data_cfg.subset, transforms=transforms)
     # eval
     print("start to evaluate...")
     if cfg.weights_dir is None:

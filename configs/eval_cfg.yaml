@@ -1,12 +1,13 @@
 data:
-  eval_dir:  s3://hyy-coco/datasets/cityscapes
-  save_dir: s3://hyy-coco/checkpoints/eval
+  eval_dir:  s3://ll-coco/datasets/cityscapes
+  save_dir: s3://ll-coco/checkpoints/eval
   dataset: cityscapes
   batch_size: 16
   input_size: (512, 1024)
   num_classes: -1
+  subset: val
 
 seed: 1
-weights_path: # s3://hyy-coco/checkpoints/model_weights_00000262.pth
-weights_dir: s3://hyy-coco/checkpoints/
-decode_cfg_path: .\configs\decode_cfg.yaml
+weights_path: s3://ll-coco/checkpoints/model_weights_00000253.pth
+weights_dir: # s3://ll-coco/checkpoints/
+decode_cfg_path:  s3://ll-coco/codes/configs/decode_cfg.yaml
