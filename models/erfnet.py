@@ -139,7 +139,7 @@ class Decoder (nn.Module):
 
 
 class ERFNet(nn.Module):
-    def __init__(self, num_classes, fixed_parts=("encoder")):  # use encoder to pass pretrained encoder
+    def __init__(self, num_classes, fixed_parts=None):  # use encoder to pass pretrained encoder
         super().__init__()
         self.heads = {
             "hm_cls": num_classes,
@@ -193,9 +193,9 @@ class ERFNet(nn.Module):
                 torch.nn.init.constant_(layers.output_conv.bias, bias)
 
         # hm_cls
-        init_model_weights(self.hm_cls, method="normal", std=0.01)
+        init_model_weights(self.hm_cls, method="normal", std=0.01, bias=-2.19)
         # hm_kp
-        init_model_weights(self.hm_kp, method="normal", std=0.01)
+        init_model_weights(self.hm_kp, method="normal", std=0.01, bias=-2.19)
         # hm_wh
         init_model_weights(self.hm_wh, method="normal", std=0.001)
         # hm_ae
