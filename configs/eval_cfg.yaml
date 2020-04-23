@@ -1,5 +1,5 @@
 data:
-  eval_dir:  C:\data\cityscapes-simple
+  eval_dir:  C:\data\cityscapes
   save_dir: C:\data\checkpoints\test
   dataset: cityscapes
   batch_size: 2
@@ -8,7 +8,8 @@ data:
   subset: val
 
 seed: 1
-weights_path: C:\data\checkpoints\erf\model_weights_00000226.pth
+model_type: erf
+weights_path: C:\data\checkpoints\erf\erf_weights_00000114.pth
 weights_dir:  # C:\data\checkpoints\erf
 decode_cfg_path: .\configs\decode_cfg.yaml
 

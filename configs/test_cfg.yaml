@@ -8,5 +8,6 @@ data:
   num_classes: 8
 
 seed: 1
-weights_path: C:\data\checkpoints\erf\model_weights_00000253.pth
+model_type: erf
+weights_path: C:\data\checkpoints\erf\erf_weights_00000114.pth
 decode_cfg_path: .\configs\decode_cfg.yaml

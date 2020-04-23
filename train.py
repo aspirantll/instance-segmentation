@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import data
 from configs import Config
-from models import ERFNet, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss, WHDLoss
+from models import create_model, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss, WHDLoss
 from utils.tranform import TrainTransforms, CommonTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
@@ -93,9 +93,9 @@ def save_checkpoint(model_dict, epoch, best_ap, save_dir, iter_id=None):
         'best_ap': best_ap
     }
     if iter_id is None:
-        weight_path = os.path.join(save_dir, "model_weights_{:0>8}.pth".format(epoch))
+        weight_path = os.path.join(save_dir, "{}_weights_{:0>8}.pth".format(cfg.model_type, epoch))
     else:
-        weight_path = os.path.join(save_dir, "model_weights_{:0>4}_{:0>4}.pth".format(epoch, iter_id))
+        weight_path = os.path.join(save_dir, "{}_weights_{:0>4}_{:0>4}.pth".format(cfg.model_type, epoch, iter_id))
     # torch.save(best_model_wts, weight_path)
     torch.save(checkpoint, weight_path)
     logger.write("epoch {}, save the weight to {}".format(epoch, weight_path))
@@ -133,27 +133,30 @@ def load_state_dict(model, save_dir, pretrained):
     :param save_dir:
     :return:
     """
-    if pretrained:
-        pretrained_dict = torch.load(pretrained, map_location=device_type)
-        model_dict = model.state_dict()
-        # remove the module suffix and filter the removed layers
-        filtered_dict = {}
-        for k, v in pretrained_dict["state_dict"].items():
-            if k.startswith("module."):
-                k = k[7:]
-            if k in model_dict:
-                filtered_dict[k] = v
-        # update the current model
-        model_dict.update(filtered_dict)
-        model.load_state_dict(model_dict)
-        model.init_weight()
-        executor.submit(save_checkpoint, model.state_dict(), 0, 0, data_cfg.save_dir)
-        logger.write("loaded the pretrained weights:" + pretrained)
+    if pretrained is not None:
+        if isinstance(pretrained, str):
+            pretrained_dict = torch.load(pretrained, map_location=device_type)
+            model_dict = model.state_dict()
+            # remove the module suffix and filter the removed layers
+            filtered_dict = {}
+            for k, v in pretrained_dict["state_dict"].items():
+                if k.startswith("module."):
+                    k = k[7:]
+                if k in model_dict:
+                    filtered_dict[k] = v
+            # update the current model
+            model_dict.update(filtered_dict)
+            model.load_state_dict(model_dict)
+            model.init_weight()
+            #executor.submit(save_checkpoint, model.state_dict(), 0, 0, data_cfg.save_dir)
+            logger.write("loaded the pretrained weights:" + pretrained)
+        else:
+            model.load_pretrained_weight()
     else:
         file_list = os.listdir(save_dir)
         file_list.sort(reverse=True)
         for file in file_list:
-            if file.startswith("model_weights_") and file.endswith(".pth"):
+            if file.startswith("{}_weights_".format(cfg.model_type)) and file.endswith(".pth"):
                 weight_path = os.path.join(save_dir, file)
                 checkpoint = torch.load(weight_path, map_location=device_type)
                 model.load_state_dict(checkpoint["state_dict"])
@@ -261,7 +264,7 @@ def train():
                                            phase="val", transforms=eval_transforms)
 
     # initialize model, optimizer, loss_fn
-    model = ERFNet(data_cfg.num_classes, fixed_parts=cfg.fixed_parts)
+    model = create_model(cfg.model_type, data_cfg.num_classes)
     start_epoch, best_ap = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
     optimizer = get_optimizer(model, opt_cfg)

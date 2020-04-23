@@ -1,8 +1,5 @@
 from __future__ import print_function
 
-from configs import Config
-from utils.tranform import CommonTransforms
-
 __copyright__ = \
     """
 Copyright &copyright © (c) 2020 The Board of xx University.
@@ -20,12 +17,14 @@ import os
 import cv2
 import numpy as np
 from utils.logger import Logger
-from models import ERFNet
+from models import create_model
 import data
 from utils import decode
 from utils.visualize import visualize_instance
 from matplotlib import pyplot as plt
 from utils import image
+from configs import Config
+from utils.tranform import CommonTransforms
 
 
 # global torch configs for training
@@ -71,6 +70,8 @@ if use_cuda:
 
 Logger.init_logger(data_cfg)
 logger = Logger.get_logger()
+eval_labels = data.get_eval_labels("cityscapes")
+label_names = [label[1] for label in eval_labels]
 
 
 def load_state_dict(model):
@@ -97,13 +98,23 @@ def handle_output(inputs, infos, model, transforms):
             name = os.path.basename(img_path)
             det = dets[i]
             logger.write("in {} detected {} objs".format(name, len(det)))
+
             img = cv2.imread(img_path)
             for j in range(len(det)):
-                obj = det[j][-1]
-                img = visualize_instance(img, [obj], mask=True)
+                img = visualize_instance(img, [det[j][-1]], mask=True)
             save_path = os.path.join(data_cfg.save_dir, name)
             cv2.imwrite(save_path, img)
             logger.write("detected result saved in {}".format(save_path))
+
+            # imgs = [cv2.imread(img_path) for n_i in range(data_cfg.num_classes)]
+            # for j in range(len(det)):
+            #     cls_id = det[j][0]
+            #     obj = det[j][-1]
+            #     imgs[cls_id] = visualize_instance(imgs[cls_id], [obj], mask=True)
+            # for n_i in range(data_cfg.num_classes):
+            #     save_path = os.path.join(data_cfg.save_dir, label_names[n_i]+"_"+name)
+            #     cv2.imwrite(save_path, imgs[n_i])
+            # logger.write("detected result saved in {}".format(data_cfg.save_dir))
 
 
 def test():
@@ -113,7 +124,7 @@ def test():
     :return:
     """
     # initialize model
-    model = ERFNet(data_cfg.num_classes)
+    model = create_model(cfg.model_type, data_cfg.num_classes)
     load_state_dict(model)
     model = model.to(device)
 

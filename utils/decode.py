@@ -331,8 +331,8 @@ def decode_output(outs, infos, transforms, decode_cfg, device):
     # get output
     hm_cls = torch.sigmoid(outs["hm_cls"])
     hm_kp = torch.sigmoid(outs["hm_kp"])
-    hm_ae = outs["hm_ae"]
-    hm_wh = outs["hm_wh"]
+    ae = outs["ae"]
+    wh = outs["wh"]
 
     # for each to handle the out
     b, cls, h, w = hm_cls.shape
@@ -340,20 +340,20 @@ def decode_output(outs, infos, transforms, decode_cfg, device):
     for b_i in range(b):
         hm_cls_mat = hm_cls[b_i]
         hm_kp_mat = hm_kp[b_i, 0]
-        hm_ae_mat = hm_ae[b_i]
-        hm_wh_mat = hm_wh[b_i]
+        ae_mat = ae[b_i]
+        wh_mat = wh[b_i]
         info = infos[b_i]
 
         # handle the center point
         max_conf_mat, cls_mat = hm_cls_mat.max(0)
-        center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, hm_wh_mat, hm_cls_mat.shape[0], decode_cfg.cls_th)
+        center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, wh_mat, hm_cls_mat.shape[0], decode_cfg.cls_th)
         if decode_cfg.draw_flag:
             img = cv2.imread(info.img_path)
             draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")
             draw_box(center_whs, center_indexes, info, transforms)
 
         # group the key points
-        center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, hm_ae_mat, transforms, center_whs
+        center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
                                                                     , center_indexes, center_cls, center_confs, info,
                                                                     decode_cfg, device)
 

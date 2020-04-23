@@ -123,7 +123,7 @@ for label in labels:
 
 # name to index
 name2index = {label.name: iter_id for iter_id, label in enumerate(eval_labels)}
-eval_names = [(iter_id, label.name) for iter_id, label in enumerate(eval_labels)]
+eval_names = [(iter_id, label.name, label.id) for iter_id, label in enumerate(eval_labels)]
 # category to list of label objects
 category2labels = {}
 for label in labels:

@@ -18,13 +18,13 @@ import torch
 import os
 import numpy as np
 import data
-from models import ERFNet
+from models import create_model
 
 from configs import Config
 from utils.logger import Logger
 from utils import decode
 from utils.tranform import CommonTransforms
-from utils.eval_util import evaluate_model
+from utils.eval_util import evaluate_model, evaluate_masks
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True
@@ -97,7 +97,7 @@ def evaluate_model_by_weights(eval_dataloader, transforms, weights_path, logger=
     :return:
     """
     # initialize
-    model = ERFNet(data_cfg.num_classes)
+    model = create_model(cfg.model_type, data_cfg.num_classes)
     epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
@@ -130,9 +130,15 @@ if __name__ == "__main__":
                                            phase=data_cfg.subset, transforms=transforms)
     # eval
     print("start to evaluate...")
-    if cfg.weights_dir is None:
-        _, mAP, eval_result = evaluate_model_by_weights(eval_dataloader, transforms, cfg.weights_path)
-        print_map_summary(mAP, eval_result, label_names)
-    else:
-        eval_weights_dir(cfg.weights_dir)
+    # if cfg.weights_dir is None:
+    #     _, mAP, eval_result = evaluate_model_by_weights(eval_dataloader, transforms, cfg.weights_path)
+    #     print_map_summary(mAP, eval_result, label_names)
+    # else:
+    #     eval_weights_dir(cfg.weights_dir)
+    # initialize
+    model = create_model(cfg.model_type, data_cfg.num_classes)
+    epoch = load_state_dict(model, cfg.weights_path)
+    model = model.to(device)
+
+    evaluate_masks(data_cfg, eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
     logger.close()
