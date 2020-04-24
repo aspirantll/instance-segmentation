@@ -1,4 +1,4 @@
-# object-segmentation
+# instance segmentation based on boundary detection
 This project implements a new approach for object segementation.
 ## requirements
 The dependencies are as following:
@@ -13,11 +13,10 @@ The dependencies are as following:
 ### install dependency
 ```shell script
 pip install -r pip-requirements.txt
-pip install git+https://github.com/philferriere/cocoapi.git#subdirectory=PythonAPI
-pip install torch===1.4.0 torchvision===0.5.0 -f https://download.pytorch.org/whl/torch_stable.html```
+pip install torch===1.4.0 torchvision===0.5.0 -f https://download.pytorch.org/whl/torch_stable.html
 ```
 ## train
-The dataset only support the coco, the train command as following:
+The dataset only support the cityscapes, the train command as following:
 ```shell script
 python train.py 
     --save_dir results/checkpoints  
