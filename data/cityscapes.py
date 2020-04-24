@@ -123,7 +123,7 @@ for label in labels:
 
 # name to index
 name2index = {label.name: iter_id for iter_id, label in enumerate(eval_labels)}
-eval_names = [(iter_id, label.name) for iter_id, label in enumerate(eval_labels)]
+eval_names = [(iter_id, label.name, label.id) for iter_id, label in enumerate(eval_labels)]
 # category to list of label objects
 category2labels = {}
 for label in labels:
@@ -187,8 +187,6 @@ class CityscapesDataset(Dataset):
             self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in
                                 fn if is_label(f)]
             self.filenamesGt.sort()
-
-            assert len(self.filenames) <= len(self.filenamesGt)
         else:
             self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.preprocess_root)) for f
                               in fn if is_np(f)]

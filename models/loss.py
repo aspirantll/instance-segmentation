@@ -91,11 +91,11 @@ class WHLoss(object):
     def get_loss_names():
         return ["wh"]
 
-    def __call__(self, hm_wh, targets):
+    def __call__(self, wh, targets):
         centers_list, _, polygons_list, box_sizes_list, _ = targets
-        wh_target, wh_mask = generate_wh_target(hm_wh.shape, centers_list, box_sizes_list)
+        wh_target, wh_mask = generate_wh_target(wh.shape, centers_list, box_sizes_list)
         wh_target, wh_mask = torch.from_numpy(wh_target).to(self._device), torch.from_numpy(wh_mask).to(self._device)
-        loss = self.loss(hm_wh * wh_mask, wh_target * wh_mask, reduction='sum')
+        loss = self.loss(wh * wh_mask, wh_target * wh_mask, reduction='sum')
         loss = loss / (wh_mask.sum() + 1e-4)
         return [loss]
 
@@ -214,14 +214,14 @@ class AELoss(object):
     def get_loss_names(self):
         return ["ae_loss"]
 
-    def __call__(self, hm_ae, targets):
+    def __call__(self, ae, targets):
         """
-        :param hm_ae:
+        :param ae:
         :param targets: (cls_ids, centers,polygons)
         :return:
         """
         # prepare step
-        b, c, h, w = hm_ae.shape
+        b, c, h, w = ae.shape
         centers_list, _, polygons_list, _, _ = targets
         ae_losses = []
         # foreach every batch
@@ -230,7 +230,7 @@ class AELoss(object):
             centers, polygons = centers_list[b_i], polygons_list[b_i]
             n = len(centers)
             ae_loss = zero_tensor(self._device)
-            ae_mat = hm_ae[b_i]
+            ae_mat = ae[b_i]
 
             for c_j in range(n):
                 center = centers[c_j]
@@ -270,15 +270,15 @@ class ComposeLoss(nn.Module):
         # unpack the output
         hm_cls = outputs["hm_cls"]
         hm_kp = outputs["hm_kp"]
-        hm_ae = outputs["hm_ae"]
-        hm_wh = outputs["hm_wh"]
+        ae = outputs["ae"]
+        wh = outputs["wh"]
 
         losses = []
         # compute losses
         losses.extend(self._cls_loss_fn(hm_cls, targets))
         losses.extend(self._kp_loss_fn(hm_kp, targets))
-        losses.extend(self._ae_loss_fn(hm_ae, targets))
-        losses.extend(self._wh_loss_fn(hm_wh, targets))
+        losses.extend(self._ae_loss_fn(ae, targets))
+        losses.extend(self._wh_loss_fn(wh, targets))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()

@@ -3,7 +3,7 @@ data:
   val_dir:  s3://ll-coco/datasets/cityscapes
   save_dir: s3://ll-coco/checkpoints
   dataset: cityscapes
-  batch_size: 4
+  batch_size: 8
   input_size: (512, 1024)
   num_classes: -1
   from_file: True
@@ -27,7 +27,8 @@ max_iter: -1
 num_epochs: 2000
 save_span: 1000
 seed: 1
+model_type: erf
 fixed_parts:  #["encoder"]
-pretrained_path: s3://ll-coco/checkpoints/erfnet_encoder_pretrained.pth
+pretrained_path: # s3://ll-coco/checkpoints/erfnet_encoder_pretrained.pth
 decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml
 start_eval_epoch: 300

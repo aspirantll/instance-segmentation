@@ -139,14 +139,9 @@ class Decoder (nn.Module):
 
 
 class ERFNet(nn.Module):
-    def __init__(self, num_classes, fixed_parts=None):  # use encoder to pass pretrained encoder
+    def __init__(self, heads, num_classes, fixed_parts=None):  # use encoder to pass pretrained encoder
         super().__init__()
-        self.heads = {
-            "hm_cls": num_classes,
-            "hm_kp": 1,
-            "hm_ae": 2,
-            "hm_wh": 2
-        }
+        self.heads = heads
         self.encoder = Encoder(num_classes)
         for head, dims in self.heads.items():
             decoder = Decoder(dims)
@@ -197,7 +192,9 @@ class ERFNet(nn.Module):
         # hm_kp
         init_model_weights(self.hm_kp, method="normal", std=0.01, bias=-2.19)
         # hm_wh
-        init_model_weights(self.hm_wh, method="normal", std=0.001)
+        init_model_weights(self.wh, method="normal", std=0.001)
         # hm_ae
-        init_model_weights(self.hm_ae, method="normal", std=0.001)
+        init_model_weights(self.ae, method="normal", std=0.001)
 
+    def load_pretrained_weight(self):
+        pass

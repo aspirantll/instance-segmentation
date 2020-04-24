@@ -20,13 +20,13 @@ os.system("rm /home/work/anaconda3/lib/libmkldnn.so.0")
 import torch
 import numpy as np
 import data
-from models import ERFNet
+from models import create_model
 
 from configs import Config
 from utils.logger import Logger
 from utils import decode
 from utils.tranform import CommonTransforms
-from utils.eval_util import evaluate_model
+from utils.eval_util import evaluate_model, evaluate_masks
 import moxing as mox
 mox.file.shift('os', 'mox')
 
@@ -105,11 +105,12 @@ def evaluate_model_by_weights(eval_dataloader, transforms, weights_path, logger=
     :return:
     """
     # initialize
-    model = ERFNet(data_cfg.num_classes)
+    model = create_model(cfg.model_type, data_cfg.num_classes)
     epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
-    return evaluate_model(eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+    # return evaluate_model(eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+    evaluate_masks(data_cfg, eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
 
 
 def load_weight_paths(weights_dir):
@@ -118,7 +119,7 @@ def load_weight_paths(weights_dir):
     file_list = os.listdir(weights_dir)
     file_list.sort(reverse=True)
     for file in file_list:
-        if file.startswith("model_weights_") and file.endswith(".pth"):
+        if file.startswith("{}_weights_".format(cfg.model_type)) and file.endswith(".pth"):
             weight_path = os.path.join(weights_dir, file)
             weight_paths.append(weight_path)
     return weight_paths
@@ -139,8 +140,9 @@ if __name__ == "__main__":
     # eval
     print("start to evaluate...")
     if cfg.weights_dir is None:
-        _, mAP, eval_result = evaluate_model_by_weights(eval_dataloader, transforms, cfg.weights_path)
-        print_map_summary(mAP, eval_result, label_names)
+        # _, mAP, eval_result = evaluate_model_by_weights(eval_dataloader, transforms, cfg.weights_path)
+        # print_map_summary(mAP, eval_result, label_names)
+        evaluate_model_by_weights(eval_dataloader, transforms, cfg.weights_path, logger)
     else:
         eval_weights_dir(cfg.weights_dir)
     logger.close()
