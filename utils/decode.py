@@ -22,6 +22,37 @@ from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
 
 
+def nms(center_cls, center_confs, center_indexes, groups, img_size, threshold=0.5):
+    num = len(center_cls)
+    # flag for suppression
+    suppression = np.zeros(num)
+    # descent order sorted
+    orders = np.argsort(- np.array(center_confs))
+    # generate mask
+    masks = [image.poly_to_mask(group, img_size) for group in groups]
+    for i in range(num - 1):
+        cur_index = orders[i]
+        if suppression[cur_index] == 1:
+            continue
+        cur_mask = masks[cur_index]
+        for j in range(i + 1, num):
+            com_index = orders[j]
+            if suppression[com_index] == 1:
+                continue
+            com_mask = masks[com_index]
+            if image.is_cover(cur_mask, com_mask) or image.compute_iou_for_mask(cur_mask, com_mask) > threshold:
+                suppression[com_index] = 1
+    # filter the suppression
+    n_center_cls, n_center_confs, n_center_indexes, n_groups = [], [], [], []
+    for k in range(num):
+        if suppression[k] == 0:
+            n_center_cls.append(center_cls[k])
+            n_center_confs.append(center_confs[k])
+            n_center_indexes.append(center_indexes[k])
+            n_groups.append(groups[k])
+    return n_center_cls, n_center_confs, n_center_indexes, n_groups
+
+
 def to_numpy(tensor):
     return tensor.cpu().numpy()
 
@@ -356,7 +387,9 @@ def decode_output(outs, infos, transforms, decode_cfg, device):
         center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
                                                                     , center_indexes, center_cls, center_confs, info,
                                                                     decode_cfg, device)
-
+        # nms
+        center_cls, center_confs, center_indexes, groups = nms(center_cls, center_confs, center_indexes, groups,
+                                                               info.img_size)
         # append the results
         dets.append([e for e in zip(center_cls, center_confs, center_indexes, groups)])
 

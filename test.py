@@ -87,34 +87,58 @@ def load_state_dict(model):
 
 
 def handle_output(inputs, infos, model, transforms):
+    output_dir = r"C:\data\checkpoints\pred"
+    num_classes = 8
+
+    eval_labels = data.get_eval_labels("cityscapes")
+    label_names = [label[1] for label in eval_labels]
+    label_ids = [label[2] for label in eval_labels]
     inputs = inputs.to(device)
     # forward the models and loss
     with torch.no_grad():
         outputs = model(inputs)
-        dets = decode.decode_output(outputs, infos, transforms, decode_cfg, device)
-        for i in range(len(dets)):
-            info = infos[i]
-            img_path = info.img_path
-            name = os.path.basename(img_path)
-            det = dets[i]
-            logger.write("in {} detected {} objs".format(name, len(det)))
+        dets_list = decode.decode_output(outputs, infos, transforms, decode_cfg, device)
+        from utils.image import poly_to_mask
+        for i, dets in enumerate(dets_list):
+            im_name = infos[i][0]
+            img_size = infos[i][1]
 
-            img = cv2.imread(img_path)
-            for j in range(len(det)):
-                img = visualize_instance(img, [det[j][-1]], mask=True)
-            save_path = os.path.join(data_cfg.save_dir, name)
-            cv2.imwrite(save_path, img)
-            logger.write("detected result saved in {}".format(save_path))
+            basename = os.path.splitext(os.path.basename(im_name))[0]
+            txtname = os.path.join(output_dir, basename + 'pred.txt')
+            with open(txtname, 'w') as fid_txt:
+                if i % 10 == 0:
+                    print('i: {}: {}'.format(i, basename))
+                for j in range(num_classes):
+                    clss = label_names[j]
+                    clss_id = label_ids[j]
 
-            # imgs = [cv2.imread(img_path) for n_i in range(data_cfg.num_classes)]
-            # for j in range(len(det)):
-            #     cls_id = det[j][0]
-            #     obj = det[j][-1]
-            #     imgs[cls_id] = visualize_instance(imgs[cls_id], [obj], mask=True)
-            # for n_i in range(data_cfg.num_classes):
-            #     save_path = os.path.join(data_cfg.save_dir, label_names[n_i]+"_"+name)
-            #     cv2.imwrite(save_path, imgs[n_i])
-            # logger.write("detected result saved in {}".format(data_cfg.save_dir))
+                    for k in range(len(dets)):
+                        center_cls, center_conf, _, group = dets[k]
+                        if center_cls != j:
+                            continue
+                        score = center_conf
+                        pngname = os.path.join(
+                            'results',
+                            basename + '_' + clss + '_{}.png'.format(k))
+                        # write txt
+                        fid_txt.write('{} {} {}\n'.format(pngname, clss_id, score))
+                        # save mask
+                        img = cv2.imread(im_name)
+                        img = visualize_instance(img, [np.array(group)], mask=True)
+                        cv2.imwrite(os.path.join(output_dir, pngname), img)
+        # for i in range(len(dets)):
+        #     info = infos[i]
+        #     img_path = info.img_path
+        #     name = os.path.basename(img_path)
+        #     det = dets[i]
+        #     logger.write("in {} detected {} objs".format(name, len(det)))
+        #
+        #     img = cv2.imread(img_path)
+        #     for j in range(len(det)):
+        #         img = visualize_instance(img, [det[j][-1]], mask=True)
+        #     save_path = os.path.join(data_cfg.save_dir, name)
+        #     cv2.imwrite(save_path, img)
+        #     logger.write("detected result saved in {}".format(save_path))
 
 
 def test():
@@ -148,7 +172,6 @@ def test():
         input_img = image.load_rgb_image(img_path)
         input, _, info = transforms(input_img, img_path=img_path)
         handle_output(input.unsqueeze(0), [info], model, transforms)
-        plt.show()
     logger.close()
 
 
