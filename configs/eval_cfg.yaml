@@ -9,7 +9,7 @@ data:
 
 seed: 1
 model_type: erf
-weights_path: C:\data\checkpoints\erf\erf_weights_00000114.pth
-weights_dir:  # C:\data\checkpoints\erf
+weights_path: C:\data\checkpoints\weights\erf_weights_00000154.pth
+weights_dir:  #C:\data\checkpoints\weights
 decode_cfg_path: .\configs\decode_cfg.yaml
 
