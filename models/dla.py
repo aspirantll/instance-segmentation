@@ -13,9 +13,6 @@ from torch import nn
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
 
-# build the c code
-os.popen()
-
 from .DCNv2.dcn_v2 import DCN
 
 BN_MOMENTUM = 0.1
@@ -444,6 +441,12 @@ class DLASeg(nn.Module):
 
         self.ida_up = IDAUp(out_channel, channels[self.first_level:self.last_level],
                             [2 ** i for i in range(self.last_level - self.first_level)])
+
+        bd_scales = [2 ** i for i in range(len(channels[:self.first_level]))]
+        self.bd_dla_up = DLAUp(0, channels[:self.first_level], bd_scales)
+
+        self.bd_ida_up = IDAUp(channels[0], channels[:self.first_level],
+                            [2 ** i for i in range(self.first_level)])
 
         self.heads = heads
         for head in self.heads:

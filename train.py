@@ -278,7 +278,7 @@ def train():
         write_metric(train_loss_states, epoch, "train")
 
         if epoch >= cfg.start_eval_epoch:
-            epoch, mAP, eval_results = evaluate_model(eval_dataloader, eval_transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+            epoch, mAP, eval_results = evaluate_model(data_cfg, eval_dataloader, eval_transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
             # judge the model. if model is greater than current best loss
             if best_ap < mAP:
                 best_ap = mAP
