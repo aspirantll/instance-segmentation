@@ -102,8 +102,8 @@ class CommonTransforms(object):
 
 
 class TrainTransforms(CommonTransforms):
-    def __init__(self, input_size, num_cls, with_flip=False, with_aug_color=False):
-        super(TrainTransforms, self).__init__(input_size, num_cls)
+    def __init__(self, input_size, num_cls, with_flip=False, with_aug_color=False, kp=True):
+        super(TrainTransforms, self).__init__(input_size, num_cls, kp)
         self._with_flip = with_flip
         self._with_aug_color = with_aug_color
 

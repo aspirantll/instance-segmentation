@@ -26,7 +26,7 @@ from configs import Config
 from utils.logger import Logger
 from utils import decode
 from utils.tranform import CommonTransforms
-from utils.eval_util import evaluate_model, evaluate_masks
+from utils.eval_util import evaluate_masks_from_json
 import moxing as mox
 mox.file.shift('os', 'mox')
 
@@ -109,8 +109,7 @@ def evaluate_model_by_weights(eval_dataloader, transforms, weights_path, logger=
     epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
-    # return evaluate_model(eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
-    evaluate_masks(data_cfg, eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+    evaluate_masks_from_json(data_cfg, eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
 
 
 def load_weight_paths(weights_dir):
@@ -140,8 +139,6 @@ if __name__ == "__main__":
     # eval
     print("start to evaluate...")
     if cfg.weights_dir is None:
-        # _, mAP, eval_result = evaluate_model_by_weights(eval_dataloader, transforms, cfg.weights_path)
-        # print_map_summary(mAP, eval_result, label_names)
         evaluate_model_by_weights(eval_dataloader, transforms, cfg.weights_path, logger)
     else:
         eval_weights_dir(cfg.weights_dir)

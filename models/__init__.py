@@ -9,10 +9,10 @@ __copyright__ = \
 __authors__ = ""
 __version__ = "1.0.0"
 
-from . import erfnet, loss #, dla
+from . import erfnet, loss, dla
 
 ERFNet = erfnet.ERFNet
-# DLASeg = dla.DLASeg
+DLASeg = dla.DLASeg
 ClsFocalLoss = loss.ClsFocalLoss
 AELoss = loss.AELoss
 ComposeLoss = loss.ComposeLoss
@@ -22,8 +22,8 @@ WHDLoss = loss.WHDLoss
 
 
 model_map = {
-    "erf": ERFNet
-    #"dla": DLASeg
+    "erf": ERFNet,
+    "dla": DLASeg
 }
 
 

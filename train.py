@@ -142,7 +142,7 @@ def load_state_dict(model, save_dir, pretrained):
     :return:
     """
     if pretrained is not None:
-        if isinstance(pretrained, str):
+        if cfg.model_type == "erf":
             pretrained_dict = torch.load(pretrained, map_location=device_type)
             model_dict = model.state_dict()
             # remove the module suffix and filter the removed layers
@@ -158,8 +158,8 @@ def load_state_dict(model, save_dir, pretrained):
             model.init_weight()
             #executor.submit(save_checkpoint, model.state_dict(), 0, 0, data_cfg.save_dir)
             logger.write("loaded the pretrained weights:" + pretrained)
-        else:
-            model.load_pretrained_weight()
+        elif cfg.model_type == 'dla':
+            model.base.load_pretrained_model(data='', name=pretrained, hash='ba72cf86')
     else:
         file_list = os.listdir(save_dir)
         file_list.sort(reverse=True)
