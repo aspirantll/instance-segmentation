@@ -30,7 +30,7 @@ def scan_remote(obsClient, remote_dir):
     marker = None
     is_truncated = True
     while is_truncated:
-        resp = obsClient.listObjects(bucketName, delimiter='/', prefix=remote_dir, marker=marker)
+        resp = obsClient.listObjects(bucketName, delimiter='', prefix=remote_dir, marker=marker)
         if resp.status < 300:
             for content in resp.body.contents:
                 if content.key not in exist_set:
@@ -92,13 +92,13 @@ if __name__ == "__main__":
         secret_access_key='yzTHk0D5TWgiEorKaVrBzuaEjBGDibDj9bjZoNPH',
         server='https://obs.cn-north-4.myhuaweicloud.com'
     )
-    local_dir = r'C:/data/checkpoints/logs/'
-    remote_dir = r'checkpoints/logs/'
+    # local_dir = r'C:/data/dla/logs/'
+    # remote_dir = r'dla/logs/'
+    #
+    # download(obsClient, local_dir, remote_dir, False)
 
-    download(obsClient, local_dir, remote_dir, False)
-
-    # local_dir = r"C:\data\cityscapes\preprocessed\train\\"
-    # remote_dir = r"datasets/cityscapes/preprocessed/train/"
-    # upload(obsClient, local_dir, remote_dir, False, ".npz")
+    local_dir = r"C:\data\cityscapes-official\leftImg8bit\val\\"
+    remote_dir = r"datasets/cityscapes/leftImg8bit/val/"
+    upload(obsClient, local_dir, remote_dir, False, "")
 
     obsClient.close()

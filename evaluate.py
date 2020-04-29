@@ -1,7 +1,5 @@
 from __future__ import print_function
 
-from utils.mean_ap import print_map_summary
-
 __copyright__ = \
 """
 Copyright &copyright © (c) 2020 The Board of xx University.

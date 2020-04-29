@@ -27,11 +27,12 @@ def sigmoid_(tensor):
 
 class WHDLoss(object):
 
-    def __init__(self, device, alpha=0.8, beta=2, th=0.5):
+    def __init__(self, device, alpha=0.8, beta=2, th=0.5, weight=0.1):
         self._device = device
         self._alpha = alpha
         self._beta = beta
         self._th = th
+        self._weight = weight
 
     @staticmethod
     def get_loss_names():
@@ -76,12 +77,13 @@ class WHDLoss(object):
         term_neg = torch.stack(terms_neg).mean()
         term_pos = torch.stack(terms_pos).mean()
         term_eng = torch.stack(terms_eng).mean()
-        return self._alpha * term_pos, (1 - self._alpha) * term_neg, (1 - self._alpha) * term_eng
+        return self._weight * self._alpha * term_pos, self._weight * (1 - self._alpha) * term_neg, self._weight * (1 - self._alpha) * term_eng
 
 
 class WHLoss(object):
-    def __init__(self, device, type='smooth_l1'):
+    def __init__(self, device, type='smooth_l1', weight=0.1):
         self._device = device
+        self._weight = weight
         if type == 'l1':
             self.loss = torch.nn.functional.l1_loss
         elif type == 'smooth_l1':
@@ -97,7 +99,7 @@ class WHLoss(object):
         wh_target, wh_mask = torch.from_numpy(wh_target).to(self._device), torch.from_numpy(wh_mask).to(self._device)
         loss = self.loss(wh * wh_mask, wh_target * wh_mask, reduction='sum')
         loss = loss / (wh_mask.sum() + 1e-4)
-        return [loss]
+        return [self._weight * loss]
 
 
 def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum"):
@@ -208,8 +210,9 @@ class ClsFocalLoss(FocalLoss):
 
 
 class AELoss(object):
-    def __init__(self, device):
+    def __init__(self, device, weight=0.1):
         self._device = device
+        self._weight = weight
 
     def get_loss_names(self):
         return ["ae_loss"]
@@ -247,7 +250,7 @@ class AELoss(object):
 
         # compute mean loss
         ae_loss = torch.stack(ae_losses).mean()
-        return [ae_loss]
+        return [self._weight * ae_loss]
 
 
 class ComposeLoss(nn.Module):
