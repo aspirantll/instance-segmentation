@@ -18,7 +18,6 @@ AELoss = loss.AELoss
 ComposeLoss = loss.ComposeLoss
 KPFocalLoss = loss.KPFocalLoss
 WHLoss = loss.WHLoss
-WHDLoss = loss.WHDLoss
 
 
 model_map = {

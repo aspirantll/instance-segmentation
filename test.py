@@ -1,8 +1,5 @@
 from __future__ import print_function
 
-from configs import Config
-from utils.tranform import CommonTransforms
-
 __copyright__ = \
     """
 Copyright &copyright © (c) 2020 The Board of xx University.
@@ -24,9 +21,8 @@ from models import create_model
 import data
 from utils import decode
 from utils.visualize import visualize_instance
-from matplotlib import pyplot as plt
 from utils import image
-from configs import Config
+from configs import Config, Configer
 from utils.tranform import CommonTransforms
 
 
@@ -50,6 +46,7 @@ args = parser.parse_args()
 cfg = Config(args.cfg_path)
 data_cfg = cfg.data
 decode_cfg = Config(cfg.decode_cfg_path)
+trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
@@ -123,7 +120,7 @@ def test():
 
     # test model
     model.eval()
-    transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes, kp=False)
+    transforms = CommonTransforms(trans_cfg, "val")
 
     decode.device = device
     if data_cfg.test_dir is not None:
@@ -141,7 +138,6 @@ def test():
         input_img = image.load_rgb_image(img_path)
         input, _, info = transforms(input_img, img_path=img_path)
         handle_output(input.unsqueeze(0), [info], model, transforms)
-        plt.show()
     logger.close()
 
 

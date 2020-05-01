@@ -6,7 +6,6 @@ data:
   batch_size: 8
   input_size: (512, 1024)
   num_classes: -1
-  from_file: True
 
 optimizer:
   lr: 5e-4
@@ -29,6 +28,7 @@ save_span: 1000
 seed: 1
 model_type: erf
 fixed_parts:  #["encoder"]
-pretrained_path: # s3://ll-coco/checkpoints/erfnet_encoder_pretrained.pth
+pretrained_path: s3://ll-coco/checkpoints/erfnet_pretrained.pth
 decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml
+trans_cfg_path: s3://ll-coco/codes/configs/trans_cfg.json
 start_eval_epoch: 300

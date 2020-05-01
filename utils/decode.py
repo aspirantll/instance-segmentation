@@ -268,9 +268,6 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t() + correspond_index.float()
     correspond_vec, corrected_centers = kmeans(active_ae, objs_num, cluster_centers=centers_vector, device=device, allow_distance=decode_cfg.allow_distance)
 
-    d_matrix = (active_ae.unsqueeze(1) - corrected_centers.unsqueeze(0)).pow(2).sum(-1).sqrt()
-    correspond_mask = d_matrix < decode_cfg.allow_distance
-
     # center pixel locations
     n_centers = []
     kps = []
@@ -287,7 +284,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         x, y = center_loc[0], center_loc[1]
 
         # get the points for center
-        kp_pixels = correspond_index[to_numpy(correspond_mask[:, i].nonzero())[:, 0], :]
+        kp_pixels = correspond_index[to_numpy((correspond_vec == i).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
         true_pixels = transforms.transform_pixel(true_pixels, infos)

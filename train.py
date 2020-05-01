@@ -23,9 +23,9 @@ import moxing as mox
 mox.file.shift('os', 'mox')
 
 import data
-from configs import Config
-from models import create_model, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss, WHDLoss
-from utils.tranform import TrainTransforms, CommonTransforms
+from configs import Config, Configer
+from models import create_model, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss
+from utils.tranform import CommonTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
 from utils.eval_util import evaluate_model
@@ -56,6 +56,7 @@ data_cfg = cfg.data
 opt_cfg = cfg.optimizer
 loss_cfg = cfg.loss
 decode_cfg = Config(cfg.decode_cfg_path)
+trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
@@ -127,8 +128,7 @@ def get_optimizer(model, opt):
 
 def init_loss_fn():
     cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    # kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
+    kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
     ae_loss_fn = AELoss(device)
     wh_loss_fn = WHLoss(device)
     return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn)
@@ -264,11 +264,11 @@ def train():
     :return:
     """
     # initialize the dataloader by dir
-    train_transforms = TrainTransforms(data_cfg.input_size, data_cfg.num_classes, with_flip=True, with_aug_color=True)
+    train_transforms = CommonTransforms(trans_cfg, "train")
     train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir, input_size=data_cfg.input_size,
-                                           phase="train", transforms=train_transforms, from_file=data_cfg.from_file)
+                                           phase="train", transforms=train_transforms)
 
-    eval_transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes, kp=False)
+    eval_transforms = CommonTransforms(trans_cfg, "val")
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
                                            input_size=data_cfg.input_size,
                                            phase="val", transforms=eval_transforms)
@@ -289,7 +289,7 @@ def train():
         executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
 
         if epoch >= cfg.start_eval_epoch:
-            epoch, mAP, eval_results = evaluate_model(eval_dataloader, eval_transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+            epoch, mAP, eval_results = evaluate_model(data_cfg, eval_dataloader, eval_transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
             # judge the model. if model is greater than current best loss
             if best_ap < mAP:
                 best_ap = mAP

@@ -58,7 +58,7 @@ def draw_umich_gaussian(heatmap, center, radius, k=1):
     top, bottom = min(y, radius), min(width - y, radius + 1)
 
     masked_heatmap = heatmap[x - left:x + right, y - top:y + bottom]
-    masked_gaussian = gaussian[radius - top:radius + bottom, radius - left:radius + right]
+    masked_gaussian = gaussian[radius - left:radius + right, radius - top:radius + bottom]
     if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
         np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
     return heatmap
@@ -94,12 +94,13 @@ def generate_cls_mask(target_size, cls_locations_list, cls_ids_list, box_sizes_l
     return target_mask
 
 
-def generate_kp_mask(target_size, polygons_list, strategy="one-hot"):
+def generate_kp_mask(target_size, polygons_list, strategy="one-hot", radius=5):
     """
     generate the kp mask
     :param target_size: tuple(b, c, h, w)
     :param polygons_list: list(list(ndarray(n*2)))
     :param strategy: smoothing, one-hot
+    :param radius: the circle
     :return: b* 1 * h * w
     """
     b, c, h, w = target_size
@@ -108,11 +109,13 @@ def generate_kp_mask(target_size, polygons_list, strategy="one-hot"):
     for b_i in range(b):
         polygons = polygons_list[b_i]
         for polygon in polygons:
-            if strategy == "one-hot":
-                for pixel in polygon:
+            for pixel in polygon:
+                if strategy == "one-hot":
                     target_mask[b_i, 0, pixel[0], pixel[1]] = 1
-            else:
-                raise ValueError("invalid strategy:{}".format(strategy))
+                elif strategy == "smoothing":
+                    target_mask[b_i, 0] = draw_umich_gaussian(target_mask[b_i, 0], pixel, radius)
+                else:
+                    raise ValueError("invalid strategy:{}".format(strategy))
     return target_mask
 
 

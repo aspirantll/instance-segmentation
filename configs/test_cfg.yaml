@@ -11,3 +11,4 @@ seed: 1
 model_type: erf
 weights_path: s3://ll-coco/checkpoints/model_weights_00000214.pth
 decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml
+trans_cfg_path: s3://ll-coco/codes/configs/trans_cfg.json
