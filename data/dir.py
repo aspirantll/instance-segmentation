@@ -12,7 +12,6 @@ __version__ = "1.0.0"
 import os
 from torch.utils import data
 from data.dataset import DatasetBuilder
-from utils.tranform import CommonTransforms
 from utils.image import load_rgb_image
 
 
@@ -26,8 +25,6 @@ class DirDataset(data.Dataset):
         self._input_size=input_size
         if transforms is not None:
             self._transforms = transforms  # ADDED THIS
-        else:
-            self._transforms = CommonTransforms(input_size, kp=False)
         # scan the dir
         self.imgs = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(data_dir)) for f in
                                 fn if f.endswith(r".jpg") or f.endswith(r".png")]
@@ -36,8 +33,8 @@ class DirDataset(data.Dataset):
         # locating index
         path = os.path.join(self._data_dir, self.imgs[index])
         input_img = load_rgb_image(path)
-
-        input_img, _, trans_info = self._transforms(input_img, img_path=path)
+        if self._transforms is not None:
+            input_img, _, trans_info = self._transforms(input_img, img_path=path)
         return input_img, trans_info
 
     def __len__(self):

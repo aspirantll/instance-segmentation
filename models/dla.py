@@ -304,7 +304,7 @@ class DLA(nn.Module):
             self.channels[-1], num_classes,
             kernel_size=1, stride=1, padding=0, bias=True)
         self.load_state_dict(model_weights)
-        # self.fc = fc
+        del self.fc
 
 
 def dla34(pretrained=True, **kwargs):  # DLA-34
@@ -423,10 +423,10 @@ class Interpolate(nn.Module):
 
 
 class DLASeg(nn.Module):
-    def __init__(self, heads, num_classes, fixed_parts=None, down_ratio=4, final_kernel=1,
+    def __init__(self, heads, num_classes, fixed_parts=None, down_ratio=1, final_kernel=1,
                           last_level=5, head_conv=256, out_channel=0):
         super(DLASeg, self).__init__()
-        assert down_ratio in [2, 4, 8, 16]
+        assert down_ratio in [1, 2, 4, 8, 16]
         self.first_level = int(np.log2(down_ratio))
         self.last_level = last_level
         self.base = DLA([1, 1, 1, 2, 2, 1],
@@ -441,12 +441,6 @@ class DLASeg(nn.Module):
 
         self.ida_up = IDAUp(out_channel, channels[self.first_level:self.last_level],
                             [2 ** i for i in range(self.last_level - self.first_level)])
-
-        bd_scales = [2 ** i for i in range(len(channels[:self.first_level]))]
-        self.bd_dla_up = DLAUp(0, channels[:self.first_level], bd_scales)
-
-        self.bd_ida_up = IDAUp(channels[0], channels[:self.first_level],
-                            [2 ** i for i in range(self.first_level)])
 
         self.heads = heads
         for head in self.heads:
@@ -485,10 +479,7 @@ class DLASeg(nn.Module):
         z = {}
         for head in self.heads:
             z[head] = self.__getattr__(head)(y[-1])
-        return z, y[-1]
+        return z
 
     def init_weight(self):
         pass
-
-    def load_pretrained_weight(self):
-        self.base.load_pretrained_model(data='imagenet', name='dla34', hash='ba72cf86')

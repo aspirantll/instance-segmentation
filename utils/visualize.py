@@ -52,18 +52,6 @@ def visualize_obj_points(kps, centers, path, colors=((255, 0, 0), (0, 0, 255))):
     return img
 
 
-def visualize_mask(img, mask, alpha=0.3, gamma=0):
-    color_mask = np.random.random((1, 3)).tolist()[0]
-    mask_img = np.ones((mask.shape[0], mask.shape[1], 3))
-    for i in range(3):
-        mask_img[:, :, i] = color_mask[i]
-
-    mask = np.expand_dims(mask, 2)
-    mask_img = img * (1 - mask) + mask_img * mask
-
-    return cv2.addWeighted(mask_img, alpha, img, 1-alpha, gamma)
-
-
 def visualize_box(img, centers, box_sizes, center_color=(255, 0, 0), mask=False):
     for center, box_size in zip(centers, box_sizes):
         w, h = box_size//2

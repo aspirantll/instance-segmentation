@@ -19,11 +19,11 @@ import numpy as np
 import data
 from models import create_model
 
-from configs import Config
+from configs import Config, Configer
 from utils.logger import Logger
 from utils import decode
 from utils.tranform import CommonTransforms
-from utils.eval_util import evaluate_model, evaluate_masks, evaluate_masks_from_json, evaluate_masks_
+from utils.eval_util import evaluate_model, evaluate_masks_from_json
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True
@@ -48,6 +48,7 @@ args = parser.parse_args()
 cfg = Config(args.cfg_path)
 data_cfg = cfg.data
 decode_cfg = Config(cfg.decode_cfg_path)
+trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
@@ -100,7 +101,7 @@ def evaluate_model_by_weights(eval_dataloader, transforms, weights_path, logger=
     epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
-    evaluate_masks_from_json(data_cfg, eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+    evaluate_model(data_cfg, eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
 
 
 def load_weight_paths(weights_dir):
@@ -123,7 +124,7 @@ def eval_weights_dir(weights_dir):
 
 
 if __name__ == "__main__":
-    transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes, kp=False)
+    transforms = CommonTransforms(trans_cfg, "val")
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.eval_dir,
                                           input_size=data_cfg.input_size,
                                           phase=data_cfg.subset, transforms=transforms)

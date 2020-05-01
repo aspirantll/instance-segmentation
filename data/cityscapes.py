@@ -1,13 +1,12 @@
 import os
+import cv2
 import json
 import numpy as np
 from torch.utils.data import Dataset
 from collections import namedtuple
 
-from utils.tranform import CommonTransforms
 from .dataset import DatasetBuilder
 from utils.image import load_rgb_image
-from utils.label_io import load_labels
 
 #--------------------------------------------------------------------------------
 # Definitions
@@ -123,7 +122,7 @@ for label in labels:
 
 # name to index
 name2index = {label.name: iter_id for iter_id, label in enumerate(eval_labels)}
-eval_names = [(iter_id, label.name, label.id) for iter_id, label in enumerate(eval_labels)]
+class_labels = [(iter_id, label.name, label.id) for iter_id, label in enumerate(eval_labels)]
 # category to list of label objects
 category2labels = {}
 for label in labels:
@@ -162,7 +161,7 @@ def parse_label_json(label_json):
         if label_name not in name2index:
             continue
         cls_ids.append(name2index[label_name])
-        # handle boundary, reverse point(w,h) to (h,w)
+        # handle boundary
         polygon = np.array(obj["polygon"], dtype=np.int32)
         polygon[:, 0] = np.clip(polygon[:, 0], a_min=0, a_max=width - 1)
         polygon[:, 1] = np.clip(polygon[:, 1], a_min=0, a_max=height - 1)
@@ -173,47 +172,34 @@ def parse_label_json(label_json):
 
 class CityscapesDataset(Dataset):
 
-    def __init__(self, root, input_size, transforms=None, subset='train', from_file=False):
-        self._from_file = from_file
+    def __init__(self, root, input_size, transforms=None, subset='train'):
         self.images_root = os.path.join(root, 'leftImg8bit/' + subset)
         self.labels_root = os.path.join(root, 'gtFine/' + subset)
-        self.preprocess_root = os.path.join(root, 'preprocessed/' + subset)
 
-        if not self._from_file:
-            self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.images_root)) for f
-                              in fn if is_image(f)]
-            self.filenames.sort()
+        self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.images_root)) for f
+                          in fn if is_image(f)]
+        self.filenames.sort()
 
-            self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in
-                                fn if is_label(f)]
-            self.filenamesGt.sort()
-        else:
-            self.filenames = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.preprocess_root)) for f
-                              in fn if is_np(f)]
+        self.filenamesGt = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(self.labels_root)) for f in
+                            fn if is_label(f)]
+        self.filenamesGt.sort()
+
         if transforms is not None:
             self._transforms = transforms  # ADDED THIS
-        else:
-            self._transforms = CommonTransforms(input_size, num_cls)
 
         print("dataset size: {}".format(len(self.filenames)))
 
     def __getitem__(self, index):
         filename = self.filenames[index]
-        if self._from_file:
-            input_img, label = load_labels(filename)
-            base_name = os.path.basename(filename)
-            prefix_name = base_name[:base_name.rfind('.')]
-            city_name = prefix_name[:prefix_name.find('_')]
-            img_path = os.path.join(self.images_root, city_name, prefix_name + ".png")
-        else:
-            img_path = filename
-            input_img = load_rgb_image(img_path)
 
-            filenameGt = self.filenamesGt[index]
-            with open(filenameGt, 'rb') as f:
-                label = parse_label_json(json.load(f))
+        img_path = filename
+        input_img = load_rgb_image(img_path)
 
-        input_img, label, trans_info = self._transforms(input_img, label, img_path, self._from_file)
+        filenameGt = self.filenamesGt[index]
+        with open(filenameGt, 'rb') as f:
+            label = parse_label_json(json.load(f))
+
+        input_img, label, trans_info = self._transforms(input_img, label, img_path)
         return input_img, label, trans_info
 
     def __len__(self):

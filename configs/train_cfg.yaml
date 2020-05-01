@@ -1,11 +1,10 @@
 data:
-  train_dir:  E:\cityscapes-official
-  save_dir: E:\checkpoints\dla
+  train_dir:  C:\data\cityscapes-official
+  save_dir: C:\data\checkpoints\erf
   dataset: cityscapes
   batch_size: 2
   input_size: (512, 1024)
   num_classes: -1
-  from_file: True
 
 optimizer:
   lr: 2e-4
@@ -27,7 +26,8 @@ num_epochs: 2000
 save_span: 100
 seed: 1
 fixed_parts: # ["encoder"]
-model_type: dla
+model_type: erf
 pretrained_path: #C:\data\checkpoints\erf\erfnet_encoder_pretrained.pth
 decode_cfg_path: .\configs\decode_cfg.yaml
+trans_cfg_path: .\configs\trans_cfg.json
 start_eval_epoch: 0

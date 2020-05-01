@@ -25,7 +25,7 @@ datasetClsNumMap = {
 }
 
 datasetEvalLabelMap = {
-    "cityscapes": cityscapes.eval_names
+    "cityscapes": cityscapes.class_labels
 }
 
 
@@ -46,7 +46,6 @@ def collate_fn_with_label(batch):
     batch_inputs = [e for e in zip(*batch)]
     input_tensors = torch.stack(batch_inputs[0])
     labels = [e for e in zip(*batch_inputs[1])]
-    labels[-1] = torch.stack(labels[-1])
     trans_infos = batch_inputs[2]
     return input_tensors, labels, trans_infos
 
@@ -64,7 +63,7 @@ def collate_fn_without_label(batch):
 
 
 def get_dataloader(batch_size, dataset_type, data_dir, phase, input_size, transforms=None
-                   , ann_file=None, num_workers=0, random=False, from_file=False, with_label=True):
+                   , ann_file=None, num_workers=0, random=False, with_label=True):
     """
     initialize the data loader, and then return a data loader
     :param num_workers: worker num
@@ -82,7 +81,7 @@ def get_dataloader(batch_size, dataset_type, data_dir, phase, input_size, transf
     dataset_builder_class = datasetBuildersMap[dataset_type]
     # initialize dataset
     dataset_builder = dataset_builder_class(data_dir, phase, ann_file)
-    dataset = dataset_builder.get_dataset(input_size=input_size, transforms=transforms, from_file=from_file)
+    dataset = dataset_builder.get_dataset(input_size=input_size, transforms=transforms)
     if with_label:
         if is_train_phase(phase):
             # initialize sampler

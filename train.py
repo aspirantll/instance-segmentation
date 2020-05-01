@@ -19,9 +19,9 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
 import data
-from configs import Config
-from models import create_model, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss, WHDLoss
-from utils.tranform import TrainTransforms, CommonTransforms
+from configs import Config, Configer
+from models import create_model, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss
+from utils.tranform import CommonTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
 from utils.eval_util import evaluate_model
@@ -48,6 +48,7 @@ data_cfg = cfg.data
 opt_cfg = cfg.optimizer
 loss_cfg = cfg.loss
 decode_cfg = Config(cfg.decode_cfg_path)
+trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
@@ -119,8 +120,7 @@ def get_optimizer(model, opt):
 
 def init_loss_fn():
     cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    # kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
+    kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
     ae_loss_fn = AELoss(device)
     wh_loss_fn = WHLoss(device)
     return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn)
@@ -134,7 +134,7 @@ def load_state_dict(model, save_dir, pretrained):
     :return:
     """
     if pretrained is not None:
-        if isinstance(pretrained, str):
+        if cfg.model_type == "erf":
             pretrained_dict = torch.load(pretrained, map_location=device_type)
             model_dict = model.state_dict()
             # remove the module suffix and filter the removed layers
@@ -150,8 +150,8 @@ def load_state_dict(model, save_dir, pretrained):
             model.init_weight()
             #executor.submit(save_checkpoint, model.state_dict(), 0, 0, data_cfg.save_dir)
             logger.write("loaded the pretrained weights:" + pretrained)
-        else:
-            model.load_pretrained_weight()
+        elif cfg.model_type == 'dla':
+            model.base.load_pretrained_model(data='', name=pretrained, hash='ba72cf86')
     else:
         file_list = os.listdir(save_dir)
         file_list.sort(reverse=True)
@@ -160,7 +160,6 @@ def load_state_dict(model, save_dir, pretrained):
                 weight_path = os.path.join(save_dir, file)
                 checkpoint = torch.load(weight_path, map_location=device_type)
                 model.load_state_dict(checkpoint["state_dict"])
-                model.init_weight()
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
                 best_ap = checkpoint["best_ap"] if "best_ap" in checkpoint else 0
@@ -244,7 +243,6 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
         torch.cuda.empty_cache()
         if (iter_id + 1) % cfg.save_span == 0:
             executor.submit(save_checkpoint, model.state_dict(), epoch, running_loss.avg, args.save_dir, iter_id)
-    avg_loss_states["Total Loss"] = running_loss
     return running_loss, avg_loss_states
 
 
@@ -254,11 +252,11 @@ def train():
     :return:
     """
     # initialize the dataloader by dir
-    train_transforms = TrainTransforms(data_cfg.input_size, data_cfg.num_classes, with_flip=True, with_aug_color=True)
+    train_transforms = CommonTransforms(trans_cfg, "train")
     train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir, input_size=data_cfg.input_size,
-                                           phase="train", transforms=train_transforms, from_file=data_cfg.from_file)
+                                           phase="train", transforms=train_transforms)
 
-    eval_transforms = CommonTransforms(data_cfg.input_size, data_cfg.num_classes, kp=False)
+    eval_transforms = CommonTransforms(trans_cfg, "val")
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
                                            input_size=data_cfg.input_size,
                                            phase="val", transforms=eval_transforms)
@@ -276,13 +274,13 @@ def train():
         # each epoch includes two phase: train,val
         train_loss, train_loss_states = train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch)
         write_metric(train_loss_states, epoch, "train")
+        executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
 
         if epoch >= cfg.start_eval_epoch:
             epoch, mAP, eval_results = evaluate_model(data_cfg, eval_dataloader, eval_transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
             # judge the model. if model is greater than current best loss
             if best_ap < mAP:
                 best_ap = mAP
-        executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
     logger.write("the best mAP:{}".format(best_ap))
     logger.close()
     executor.shutdown(wait=True)

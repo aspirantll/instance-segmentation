@@ -1,5 +1,5 @@
 data:
-  test_dir: C:\data\cityscapes\leftImg8bit\val
+  test_dir: C:\data\cityscapes\leftImg8bit\train
   test_image: #C:\data\checkpoints\erf\000000000026.jpg
   save_dir: C:\data\checkpoints\test
   dataset: dir
@@ -9,5 +9,6 @@ data:
 
 seed: 1
 model_type: erf
-weights_path: C:\data\checkpoints\weights\erf_weights_00000158.pth
+weights_path: C:\data\checkpoints\erf\erf_weights_00000294.pth
 decode_cfg_path: .\configs\decode_cfg.yaml
+trans_cfg_path: .\configs\trans_cfg.json

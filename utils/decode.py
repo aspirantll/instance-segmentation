@@ -22,37 +22,6 @@ from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
 
 
-def nms(center_cls, center_confs, center_indexes, groups, img_size, threshold=0.5):
-    num = len(center_cls)
-    # flag for suppression
-    suppression = np.zeros(num)
-    # descent order sorted
-    orders = np.argsort(- np.array(center_confs))
-    # generate mask
-    masks = [image.poly_to_mask(group, img_size) for group in groups]
-    for i in range(num - 1):
-        cur_index = orders[i]
-        if suppression[cur_index] == 1:
-            continue
-        cur_mask = masks[cur_index]
-        for j in range(i + 1, num):
-            com_index = orders[j]
-            if suppression[com_index] == 1:
-                continue
-            com_mask = masks[com_index]
-            if image.is_cover(cur_mask, com_mask) or image.compute_iou_for_mask(cur_mask, com_mask) > threshold:
-                suppression[com_index] = 1
-    # filter the suppression
-    n_center_cls, n_center_confs, n_center_indexes, n_groups = [], [], [], []
-    for k in range(num):
-        if suppression[k] == 0:
-            n_center_cls.append(center_cls[k])
-            n_center_confs.append(center_confs[k])
-            n_center_indexes.append(center_indexes[k])
-            n_groups.append(groups[k])
-    return n_center_cls, n_center_confs, n_center_indexes, n_groups
-
-
 def to_numpy(tensor):
     return tensor.cpu().numpy()
 
@@ -299,9 +268,6 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t() + correspond_index.float()
     correspond_vec, corrected_centers = kmeans(active_ae, objs_num, cluster_centers=centers_vector, device=device, allow_distance=decode_cfg.allow_distance)
 
-    d_matrix = (active_ae.unsqueeze(1) - corrected_centers.unsqueeze(0)).pow(2).sum(-1).sqrt()
-    correspond_mask = d_matrix < decode_cfg.allow_distance
-
     # center pixel locations
     n_centers = []
     kps = []
@@ -318,7 +284,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         x, y = center_loc[0], center_loc[1]
 
         # get the points for center
-        kp_pixels = correspond_index[to_numpy(correspond_mask[:, i].nonzero())[:, 0], :]
+        kp_pixels = correspond_index[to_numpy((correspond_vec == i).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
         true_pixels = transforms.transform_pixel(true_pixels, infos)
@@ -387,9 +353,7 @@ def decode_output(outs, infos, transforms, decode_cfg, device):
         center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
                                                                     , center_indexes, center_cls, center_confs, info,
                                                                     decode_cfg, device)
-        # nms
-        center_cls, center_confs, center_indexes, groups = nms(center_cls, center_confs, center_indexes, groups,
-                                                               info.img_size)
+
         # append the results
         dets.append([e for e in zip(center_cls, center_confs, center_indexes, groups)])
 

@@ -13,7 +13,6 @@ import uuid
 import json
 import cv2
 import torch
-
 import data
 import numpy as np
 from tqdm import tqdm
@@ -63,7 +62,6 @@ def evaluate_model(data_cfg, eval_dataloader, transforms, model, epoch, dataset,
         info_list.extend(infos)
 
     logger.write("[{}] finish evaluate step".format(epoch))
-    import json
     dets_json = json.dumps(dets_list, cls=NpEncoder)
     info_json = json.dumps(info_list, cls=NpEncoder)
     with open(os.path.join(output_dir, "{}_dets.json".format(epoch)), 'w') as f:
@@ -174,30 +172,5 @@ def evaluate_masks_from_json(data_cfg, eval_dataloader, transforms, model, epoch
                     fid_txt.write('{} {} {}\n'.format(pngname, clss_id, score))
                     # save mask
                     cv2.imwrite(os.path.join(output_dir, pngname), mask * 255)
-    logger.write('Evaluating...')
-    cityscapes_eval.main()
-
-
-def evaluate_masks_(data_cfg, eval_dataloader, transforms, model, epoch, dataset, decode_cfg, device, logger, use_salt=True):
-    output_dir = data_cfg.save_dir
-
-    res_file = os.path.join(
-        output_dir, 'segmentations_cityscapes_results')
-    if use_salt:
-        res_file += '_{}'.format(str(uuid.uuid4()))
-    res_file += '.json'
-
-    results_dir = os.path.join(output_dir, 'results')
-    if not os.path.exists(results_dir):
-        os.mkdir(results_dir)
-
-    os.environ['CITYSCAPES_DATASET'] = data_cfg.eval_dir
-    os.environ['CITYSCAPES_RESULTS'] = output_dir
-
-    # Load the Cityscapes eval script *after* setting the required env vars,
-    # since the script reads their values into global variables (at load time).
-    import cityscapesscripts.evaluation.evalInstanceLevelSemanticLabeling \
-        as cityscapes_eval
-
     logger.write('Evaluating...')
     cityscapes_eval.main()

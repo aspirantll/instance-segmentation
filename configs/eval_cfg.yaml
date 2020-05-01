@@ -12,4 +12,5 @@ model_type: erf
 weights_path: C:\data\checkpoints\weights\erf_weights_00000154.pth
 weights_dir:  #C:\data\checkpoints\weights
 decode_cfg_path: .\configs\decode_cfg.yaml
+trans_cfg_path: .\configs\trans_cfg.json
 
