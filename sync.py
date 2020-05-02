@@ -12,7 +12,10 @@ __version__ = "1.0.0"
 
 import os
 import time
+import re
 from obs import ObsClient
+from matplotlib import pyplot as plt
+
 
 bucketName = 'll-coco'
 
@@ -85,6 +88,43 @@ def upload(obsClient, local_dir, remote_dir, cover_flag, extension):
                     print('errorMessage:', resp.errorMessage)
 
 
+def collect_loss(log_dir):
+    real_pattern = r"(\d+\.\d+)"
+    pattern = r"train : \[(\d+)/\d+\]\|cls_pos {0} \| cls_neg {0} \| kp_pos {0} \| kp_neg {0} " \
+              r"\| ae_loss {0} \| wh {0} \| total_loss {0} \|".format(real_pattern)
+    loss_list = []
+    for file_name in os.listdir(log_dir):
+        if 'stdout' in file_name:
+            with open(os.path.join(log_dir, file_name), 'r') as f:
+                lines = f.readlines()
+            for line in lines:
+                match_result = re.search(pattern, line)
+                if match_result is not None:
+                    temp = tuple([eval(e) for e in match_result.groups()])
+                    loss_list.append(temp)
+    loss_list.sort(key=lambda e: e[0])
+
+    loss_tuple = tuple(zip(*loss_list))
+    names = ["epoch", "cls_pos", "cls_neg", "kp_pos", "kp_neg", "ae_loss", "wh", "total_loss"]
+    for index in range(1, len(names)):
+        x = loss_tuple[0]
+        y = loss_tuple[index]
+
+        x_name = names[0]
+        y_name = names[index]
+
+        plt.figure(index)
+        plt.plot(x, y, '-r', label=y_name)
+        plt.title('Graph of {}'.format(y_name))
+        plt.xlabel(x_name, color='#1C2833')
+        plt.ylabel(y_name, color='#1C2833')
+        plt.show()
+
+    for index in range(len(names)):
+        print(names[index], loss_tuple[index])
+
+
+
 
 if __name__ == "__main__":
     obsClient = ObsClient(
@@ -92,13 +132,14 @@ if __name__ == "__main__":
         secret_access_key='yzTHk0D5TWgiEorKaVrBzuaEjBGDibDj9bjZoNPH',
         server='https://obs.cn-north-4.myhuaweicloud.com'
     )
-    # local_dir = r'C:/data/dla/logs/'
-    # remote_dir = r'dla/logs/'
-    #
+    local_dir = r'C:/data/checkpoints/logs/'
+    remote_dir = r'checkpoints/txtlogs/'
+
     # download(obsClient, local_dir, remote_dir, False)
 
-    local_dir = r"C:\data\cityscapes-official\leftImg8bit\val\\"
-    remote_dir = r"datasets/cityscapes/leftImg8bit/val/"
-    upload(obsClient, local_dir, remote_dir, False, "")
+    # local_dir = r"C:\data\cityscapes-official\leftImg8bit\val\\"
+    # remote_dir = r"datasets/cityscapes/leftImg8bit/val/"
+    # upload(obsClient, local_dir, remote_dir, False, "")
 
     obsClient.close()
+    collect_loss(local_dir)
