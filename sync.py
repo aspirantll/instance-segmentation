@@ -124,8 +124,6 @@ def collect_loss(log_dir):
         print(names[index], loss_tuple[index])
 
 
-
-
 if __name__ == "__main__":
     obsClient = ObsClient(
         access_key_id='8PCTQLUHQESAUNGGOUZY',
