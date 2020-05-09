@@ -1,7 +1,6 @@
-cls_th: 1000
-kp_th: 10000
-allow_distance: 10
+cls_th: 5000
+kp_th: 12000
 obj_pixel_th: 4
 wh_delta: 0.2
 alpha_ratio: 2
-draw_flag: True
+draw_flag: False

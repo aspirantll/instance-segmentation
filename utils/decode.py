@@ -21,6 +21,7 @@ from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
 
+base_dir = r"E:\checkpoints\test"
 
 def to_numpy(tensor):
     return tensor.cpu().numpy()
@@ -151,20 +152,24 @@ def aug_group(pts, center_loc, alpha_ratio=2):
     if area == 0:
         return None
 
-    n = sorted_kp.shape[0]
-    r = np.max(np.vstack([np.sqrt(np.power(
-        sorted_kp[(i+1) % n] - sorted_kp[i], 2).sum()) for i in range(n)])) * alpha_ratio
-    bound_polygons = alphashape(pts, 1/r)
-
-    poly = filter_ghost_polygons(bound_polygons, center_loc)
-    if poly is None and cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
+    # n = sorted_kp.shape[0]
+    # r = np.max(np.vstack([np.sqrt(np.power(
+    #     sorted_kp[(i+1) % n] - sorted_kp[i], 2).sum()) for i in range(n)])) * alpha_ratio
+    # bound_polygons = alphashape(pts, 1/r)
+    #
+    # poly = filter_ghost_polygons(bound_polygons, center_loc)
+    # if poly is None and cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
+    #     return sorted_kp
+    # else:
+    #     return poly
+    if cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
         return sorted_kp
     else:
-        return poly
+        return None
 
 
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
-    cv2.imwrite(r'C:\data\checkpoints\test\mask_{}{}'.format(keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
+    cv2.imwrite(r'{}\mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
     kp_arr = to_numpy(kp_mask.nonzero())
     img = cv2.imread(infos.img_path)
     draw_kp(img, kp_arr, transforms, kp_threshold, infos, keyword)
@@ -174,24 +179,23 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
     for kp in kps:
         true_pixel = kp.astype(np.float32)
         # transform to origin image pixel
-        true_pixel = transforms.transform_pixel(true_pixel, infos)
+        true_pixel = transforms.detransform_pixel(true_pixel, infos)
         # put to groups
         img = visualize_kp(img, true_pixel)
     cv2.imwrite(
-        r'C:\data\checkpoints\test\{}_{}{}.png'.format(os.path.basename(infos.img_path), keyword, kp_threshold),
+        r'{}\{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
         img)
     return img
 
 
 def draw_box(box_sizes, centers, trans_info, transforms):
-    save_dir = r"C:\data\checkpoints\test"
-    centers = [transforms.transform_pixel(center, trans_info)[0] for center in centers]
+    centers = [transforms.detransform_pixel(center, trans_info)[0] for center in centers]
     box_sizes = [box_size[::-1] for box_size in box_sizes]
 
     img = cv2.imread(trans_info.img_path)
     img = visualize_box(img, centers, box_sizes, mask=True)
     cv2.imwrite(
-        r'{}\{}_{}.png'.format(save_dir, os.path.basename(trans_info.img_path), "box"),
+        r'{}\{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
         img)
 
 
@@ -264,9 +268,10 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, infos, "bound")
 
     # clear the non-active part
+    allow_distances = np.vstack(center_whs).max(axis=1) * (0.5 + decode_cfg.wh_delta)
     correspond_index = kp_mask.nonzero()
     active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t() + correspond_index.float()
-    correspond_vec, corrected_centers = kmeans(active_ae, objs_num, cluster_centers=centers_vector, device=device, allow_distance=decode_cfg.allow_distance)
+    correspond_vec, corrected_centers = kmeans(active_ae, objs_num, cluster_centers=centers_vector, device=device, allow_distances=allow_distances)
 
     # center pixel locations
     n_centers = []
@@ -280,14 +285,14 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         h, w = tuple(center_whs[i])
         center_loc = center_indexes[i]
 
-        center_loc = transforms.transform_pixel(center_loc, infos)[0]
+        center_loc = transforms.detransform_pixel(center_loc, infos)[0]
         x, y = center_loc[0], center_loc[1]
 
         # get the points for center
         kp_pixels = correspond_index[to_numpy((correspond_vec == i).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
-        true_pixels = transforms.transform_pixel(true_pixels, infos)
+        true_pixels = transforms.detransform_pixel(true_pixels, infos)
         # filter the ghost point
         x_mask = (x - (0.5 + decode_cfg.wh_delta) * w < true_pixels[:, 0]) * (true_pixels[:, 0] < x + (0.5 + decode_cfg.wh_delta) * w)
         y_mask = (y - (0.5 + decode_cfg.wh_delta) * h < true_pixels[:, 1]) * (true_pixels[:, 1] < y + (0.5 + decode_cfg.wh_delta) * h)
@@ -310,7 +315,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
             n_confs.append(center_confs[i])
     if decode_cfg.draw_flag:
         cv2.imwrite(
-            r'C:\data\checkpoints\test\{}_{}.png'.format(os.path.basename(infos.img_path), "candid"),
+            r'{}\{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
             img)
     return n_clss, n_confs, n_centers, kps
 

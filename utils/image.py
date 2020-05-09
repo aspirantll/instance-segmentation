@@ -68,7 +68,7 @@ def apply_affine_transform(pts, t, size):
     apply the affine transform for points
     :param pts: the size is n*2
     :param t: the size is 2 * 3
-    :param size: height,width
+    :param size: width, height
     :return:
     """
     # convert to homogeneous coordinates

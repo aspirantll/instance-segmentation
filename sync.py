@@ -46,11 +46,12 @@ def scan_remote(obsClient, remote_dir):
     return exist_set
 
 
-def download(obsClient, local_dir, remote_dir, delete_flag):
+def download(obsClient, local_dir, remote_dir, delete_flag, wait):
     exist_set = scan(local_dir, remote_dir)
     marker = None
+    next_flag = True
 
-    while True:
+    while next_flag or wait:
         resp = obsClient.listObjects(bucketName, delimiter='/', prefix=remote_dir, marker=marker)
         if resp.status < 300:
             for content in resp.body.contents:
@@ -63,11 +64,16 @@ def download(obsClient, local_dir, remote_dir, delete_flag):
                     obsClient.deleteObject(bucketName, content.key)
                     print("[{}]  delete:{}".format(time_str, content.key))
             if len(resp.body.contents) > 0:
+                next_flag = True
                 marker = resp.body.contents[-1].key
+            else:
+                next_flag = False
+                if wait:
+                    time.sleep(150)
         else:
             print('errorCode:', resp.errorCode)
             print('errorMessage:', resp.errorMessage)
-        time.sleep(150)
+    print("download complete!")
 
 
 def upload(obsClient, local_dir, remote_dir, cover_flag, extension):
@@ -130,10 +136,10 @@ if __name__ == "__main__":
         secret_access_key='yzTHk0D5TWgiEorKaVrBzuaEjBGDibDj9bjZoNPH',
         server='https://obs.cn-north-4.myhuaweicloud.com'
     )
-    local_dir = r'C:/data/checkpoints/logs/'
-    remote_dir = r'checkpoints/txtlogs/'
+    local_dir = r'E:\checkpoints\erf\logs\\'
+    remote_dir = r'erf/txtlogs/'
 
-    # download(obsClient, local_dir, remote_dir, False)
+    download(obsClient, local_dir, remote_dir, False, False)
 
     # local_dir = r"C:\data\cityscapes-official\leftImg8bit\val\\"
     # remote_dir = r"datasets/cityscapes/leftImg8bit/val/"

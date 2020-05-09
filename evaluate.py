@@ -126,8 +126,9 @@ def load_weight_paths(weights_dir):
 def eval_weights_dir(weights_dir):
     weight_paths = load_weight_paths(weights_dir)
     logger.write("the num of weights file: {}".format(len(weight_paths)))
-    for weight_path in weight_paths:
-        evaluate_model_by_weights(eval_dataloader, transforms, weight_path, logger)
+    for iter_id, weight_path in enumerate(weight_paths):
+        if iter_id % 50 == 0:
+            evaluate_model_by_weights(eval_dataloader, transforms, weight_path, logger)
 
 
 if __name__ == "__main__":

@@ -22,25 +22,32 @@ def create_job():
         framework_version='PyTorch-1.0.0-python3.6',  # AI引擎版本
         code_dir='/ll-coco/codes/',  # 训练脚本目录
         boot_file='/ll-coco/codes/train.py',  # 训练启动脚本目录
-        log_url='/ll-coco/checkpoints/txtlogs/',  # 训练日志目录
+        log_url='/ll-coco/erf/txtlogs/',  # 训练日志目录
         hyperparameters=[
             {"label": "cfg_path",
              "value": "s3://ll-coco/codes/configs/train_cfg.yaml"}
         ],
-        output_path='/ll-coco/checkpoints/',  # 训练输出目录
+        output_path='/ll-coco/erf/',  # 训练输出目录
         train_instance_type='modelarts.vm.gpu.free',  # 训练环境规格
         train_instance_count=1)
-    estimator.fit(inputs='/ll-coco/datasets/cityscapes/', wait=False, job_name='erf')
+    instance = estimator.fit(inputs='/ll-coco/datasets/cityscapes/', wait=False, job_name='trainjob-e6dd')
 
     print("{} job created".format(time.time()))
     time.sleep(3600)
 
 
-def create_loop():
+def create_loop(job_id=None, job_name=None):
     session = Session(username='hw48658147', password='Ll812132249', region_name='cn-north-4')
-    job_list_info = Estimator.get_job_list(modelarts_session=session, per_page=10, page=1, order="asc",
-                                           search_content="job")
-    job_id = job_list_info["jobs"][0].job_id
+    if job_id is None:
+        job_list_info = Estimator.get_job_list(modelarts_session=session, per_page=10, page=1, order="asc",
+                                               search_content="job")
+        if job_name is not None:
+            for job_info in job_list_info["jobs"]:
+                if job_info.job_name == job_name:
+                    job_id = job_info.job_id
+                    break
+        if job_id is None:
+            job_id = job_list_info["jobs"][0].job_id
     estimator = Estimator(session, job_id=job_id)
     job_version_info = estimator.get_job_version_info()
     version_id = job_version_info["versions"][0]["version_id"]
@@ -49,25 +56,25 @@ def create_loop():
         estimator = Estimator(session, job_id=job_id, version_id=version_id)
         estimator.stop_job_version()
         print("{} stopped".format(time.time()))
-        time.sleep(60)
+        time.sleep(30)
     estimator = Estimator(
         modelarts_session=session,
         framework_type='PyTorch',  # AI引擎名称
         framework_version='PyTorch-1.0.0-python3.6',  # AI引擎版本
         code_dir='/ll-coco/codes/',  # 训练脚本目录
         boot_file='/ll-coco/codes/train.py',  # 训练启动脚本目录
-        log_url='/ll-coco/dla/txtlogs/',  # 训练日志目录
+        log_url='/ll-coco/erf/txtlogs/',  # 训练日志目录
         hyperparameters=[
             {"label": "cfg_path",
              "value": "s3://ll-coco/codes/configs/train_cfg.yaml"}
         ],
-        output_path='/ll-coco/dla/',  # 训练输出目录
+        output_path='/ll-coco/erf/',  # 训练输出目录
         train_instance_type='modelarts.vm.gpu.free',  # 训练环境规格
         train_instance_count=1)
     estimator.create_job_version(job_id=job_id,
                                  pre_version_id=version_id,
                                  inputs='/ll-coco/datasets/cityscapes/', wait=False,
-                                 job_desc='train for net')
+                                 job_desc='train for erf')
     print("{} created".format(time.time()))
     time.sleep(3600)
 
@@ -75,4 +82,4 @@ def create_loop():
 if __name__ == "__main__":
     # create_job()
     while True:
-        create_loop()
+        create_loop(job_name="trainjob-e6dd")

@@ -148,7 +148,27 @@ class CommonTransforms(object):
         img, label = self.aug_trans(img, label=label)
 
         input_tensor = self.img_transform(img)
-
-        label = self.label_transform(label)
+        if label is not None:
+            label = self.label_transform(label)
 
         return input_tensor, label, TransInfo(img_path, img_size)
+
+    def detransform_pixel(self, pixels, info):
+        pixels = pixels.reshape(-1, 2)
+        reversed_pixels = pixels[:, ::-1]
+        img_size = info.img_size
+
+        if 'resize' in self.configer.get('val_trans', 'trans_seq'):
+            if 'target_size' in self.configer.get('val_trans', 'resize'):
+                target_size = tuple(self.configer.get('val_trans', 'resize')['target_size'])
+                transform_matrix = image.get_affine_transform(img_size[::-1], target_size, inv=True)
+                reversed_pixels = image.apply_affine_transform(reversed_pixels, transform_matrix, img_size[::-1])
+
+        return reversed_pixels
+
+    def tensor_to_image(self, tensor):
+        denormalized_tensor = DeNormalize(div_value=self.configer.get('normalize', 'div_value'),
+                                          mean=self.configer.get('normalize', 'mean'),
+                                          std=self.configer.get('normalize', 'std'))(tensor)
+        rgb_img = denormalized_tensor.numpy().transpose(1, 2, 0)
+        return cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
