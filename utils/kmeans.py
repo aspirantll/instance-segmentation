@@ -17,11 +17,10 @@ def kmeans(
         X,
         num_clusters,
         cluster_centers,
+        allow_distances,
         distance='euclidean',
         tol=1e-4,
-        device=torch.device('cpu'),
-        allow_distance=65535
-):
+        device=torch.device('cpu')):
     """
     perform kmeans
     :param X: (torch.tensor) matrix
@@ -29,7 +28,7 @@ def kmeans(
     :param distance: (str) distance [options: 'euclidean', 'cosine'] [default: 'euclidean']
     :param tol: (float) threshold [default: 0.0001]
     :param device: (torch.device) device [default: cpu]
-    :param max_distance: allow max distance
+    :param allow_distances: allow max distance
     :return: (torch.tensor, torch.tensor) cluster ids, cluster centers
     """
     if distance == 'euclidean':
@@ -45,6 +44,9 @@ def kmeans(
     # transfer to device
     X = X.to(device)
 
+    # transfer ndarray to tensor
+    allow_distances = torch.from_numpy(allow_distances).to(device)
+
     # find data point closest to the initial cluster center
     initial_state = cluster_centers.to(device)
 
@@ -55,7 +57,7 @@ def kmeans(
         min_distance, choice_cluster = torch.min(dis, dim=1)
 
         # set cluster id = num_cluster if min distance is greater than allow distance
-        allow_mask = (min_distance < allow_distance).long()
+        allow_mask = (min_distance < allow_distances[choice_cluster]).long()
         choice_cluster = choice_cluster * allow_mask + (1 - allow_mask) * num_clusters
 
         # compute new centers

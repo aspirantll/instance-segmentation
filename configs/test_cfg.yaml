@@ -1,7 +1,7 @@
 data:
-  test_dir: C:\data\cityscapes\leftImg8bit\train
-  test_image: #C:\data\checkpoints\erf\000000000026.jpg
-  save_dir: C:\data\checkpoints\test
+  test_dir: E:\cityscapes\leftImg8bit\val
+  test_image: #E:\checkpoints\erf\
+  save_dir: E:\checkpoints\test
   dataset: dir
   batch_size: 1
   input_size: (512, 1024)
@@ -9,6 +9,6 @@ data:
 
 seed: 1
 model_type: erf
-weights_path: C:\data\checkpoints\erf\erf_weights_00000294.pth
+weights_path: E:\checkpoints\erf\erf_weights_00000200.pth
 decode_cfg_path: .\configs\decode_cfg.yaml
 trans_cfg_path: .\configs\trans_cfg.json

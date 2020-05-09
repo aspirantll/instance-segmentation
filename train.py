@@ -147,8 +147,8 @@ def load_state_dict(model, save_dir, pretrained):
             # update the current model
             model_dict.update(filtered_dict)
             model.load_state_dict(model_dict)
-            model.init_weight()
-            #executor.submit(save_checkpoint, model.state_dict(), 0, 0, data_cfg.save_dir)
+            # model.init_weight()
+            executor.submit(save_checkpoint, model.state_dict(), -1, 0, data_cfg.save_dir)
             logger.write("loaded the pretrained weights:" + pretrained)
         elif cfg.model_type == 'dla':
             model.base.load_pretrained_model(data='', name=pretrained, hash='ba72cf86')
