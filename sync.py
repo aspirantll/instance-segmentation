@@ -136,8 +136,8 @@ if __name__ == "__main__":
         secret_access_key='yzTHk0D5TWgiEorKaVrBzuaEjBGDibDj9bjZoNPH',
         server='https://obs.cn-north-4.myhuaweicloud.com'
     )
-    local_dir = r'E:\checkpoints\erf\logs\\'
-    remote_dir = r'erf/txtlogs/'
+    local_dir = r'E:\checkpoints\erf1\logs\\'
+    remote_dir = r'erf1/txtlogs/'
 
     download(obsClient, local_dir, remote_dir, False, False)
 

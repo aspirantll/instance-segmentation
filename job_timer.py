@@ -22,15 +22,15 @@ def create_job():
         framework_version='PyTorch-1.0.0-python3.6',  # AI引擎版本
         code_dir='/ll-coco/codes/',  # 训练脚本目录
         boot_file='/ll-coco/codes/train.py',  # 训练启动脚本目录
-        log_url='/ll-coco/erf/txtlogs/',  # 训练日志目录
+        log_url='/ll-coco/erf1/txtlogs/',  # 训练日志目录
         hyperparameters=[
             {"label": "cfg_path",
-             "value": "s3://ll-coco/codes/configs/train_cfg.yaml"}
+             "value": "s3://ll-coco/erf1/train_cfg.yaml"}
         ],
-        output_path='/ll-coco/erf/',  # 训练输出目录
+        output_path='/ll-coco/erf1/',  # 训练输出目录
         train_instance_type='modelarts.vm.gpu.free',  # 训练环境规格
         train_instance_count=1)
-    instance = estimator.fit(inputs='/ll-coco/datasets/cityscapes/', wait=False, job_name='trainjob-e6dd')
+    instance = estimator.fit(inputs='/ll-coco/datasets/cityscapes/', wait=False, job_name='trainjob-b4aa')
 
     print("{} job created".format(time.time()))
     time.sleep(3600)
@@ -63,12 +63,12 @@ def create_loop(job_id=None, job_name=None):
         framework_version='PyTorch-1.0.0-python3.6',  # AI引擎版本
         code_dir='/ll-coco/codes/',  # 训练脚本目录
         boot_file='/ll-coco/codes/train.py',  # 训练启动脚本目录
-        log_url='/ll-coco/erf/txtlogs/',  # 训练日志目录
+        log_url='/ll-coco/erf1/txtlogs/',  # 训练日志目录
         hyperparameters=[
             {"label": "cfg_path",
-             "value": "s3://ll-coco/codes/configs/train_cfg.yaml"}
+             "value": "s3://ll-coco/erf1/train_cfg.yaml"}
         ],
-        output_path='/ll-coco/erf/',  # 训练输出目录
+        output_path='/ll-coco/erf1/',  # 训练输出目录
         train_instance_type='modelarts.vm.gpu.free',  # 训练环境规格
         train_instance_count=1)
     estimator.create_job_version(job_id=job_id,
@@ -82,4 +82,4 @@ def create_loop(job_id=None, job_name=None):
 if __name__ == "__main__":
     # create_job()
     while True:
-        create_loop(job_name="trainjob-e6dd")
+        create_loop(job_name="trainjob-b4aa")
