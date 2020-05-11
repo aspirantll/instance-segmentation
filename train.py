@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import data
 from configs import Config, Configer
-from models import create_model, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss
+from models import create_model, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss, WHDLoss
 from utils.tranform import CommonTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
@@ -120,7 +120,8 @@ def get_optimizer(model, opt):
 
 def init_loss_fn():
     cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
+    # kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
+    kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
     ae_loss_fn = AELoss(device)
     wh_loss_fn = WHLoss(device)
     return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn)
@@ -148,7 +149,7 @@ def load_state_dict(model, save_dir, pretrained):
             model_dict.update(filtered_dict)
             model.load_state_dict(model_dict)
             # model.init_weight()
-            executor.submit(save_checkpoint, model.state_dict(), -1, 0, data_cfg.save_dir)
+            # executor.submit(save_checkpoint, model.state_dict(), -1, 0, data_cfg.save_dir)
             logger.write("loaded the pretrained weights:" + pretrained)
         elif cfg.model_type == 'dla':
             model.base.load_pretrained_model(data='', name=pretrained, hash='ba72cf86')

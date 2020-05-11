@@ -65,7 +65,7 @@ class WHDLoss(object):
             # compute distance matrix
             diff = all_pixel_locations.unsqueeze(1) - target_pixel_locations.unsqueeze(0)
             # Euclidean distance
-            d_matrix = torch.sum(diff.pow(2), -1).float().sqrt()
+            d_matrix = torch.min(torch.sum(diff.pow(2), -1).float().sqrt(), 1)[0].reshape(h, w)
             # compute term_1
             terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_matrix / p_sum))
             # compute term_2
