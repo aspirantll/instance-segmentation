@@ -23,7 +23,7 @@ from configs import Config, Configer
 from utils.logger import Logger
 from utils import decode
 from utils.tranform import CommonTransforms
-from utils.eval_util import evaluate_model, evaluate_masks_from_json
+from utils.eval_util import evaluate_model
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True

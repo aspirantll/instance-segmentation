@@ -282,7 +282,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     color = [int(e) for e in np.random.random_integers(0, 256, 3)]
     for i in range(objs_num):
         # filter the boxes
-        h, w = tuple(center_whs[i])
+        h, w = tuple(center_whs[i] * 2)
         center_loc = center_indexes[i]
 
         center_loc = transforms.detransform_pixel(center_loc, infos)[0]

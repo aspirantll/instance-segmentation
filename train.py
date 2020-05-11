@@ -163,6 +163,7 @@ def load_state_dict(model, save_dir, pretrained):
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
                 best_ap = checkpoint["best_ap"] if "best_ap" in checkpoint else 0
+                # save_checkpoint(model.state_dict(), -1, 0, data_cfg.save_dir)
                 return start_epoch + 1, best_ap
         model.init_weight()
     return 0, 0
