@@ -13,6 +13,7 @@ import torch
 import math
 import torch.nn as nn
 import numpy as np
+from sklearn.utils.extmath import cartesian
 
 from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_wh_target
 
@@ -23,6 +24,70 @@ def zero_tensor(device):
 
 def sigmoid_(tensor):
     return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1-1e-4)
+
+
+class WHDLoss(object):
+
+    def __init__(self, device, alpha=0.8, beta=2, th=0.5, weight=0.1):
+        self._device = device
+        self._alpha = alpha
+        self._beta = beta
+        self._th = th
+        self._weight = weight
+
+
+    @staticmethod
+    def get_loss_names():
+        return ["kp_pos", "kp_neg", "kp_energy"]
+
+    def __call__(self, hm_kp, targets):
+        # prepare step
+        cls_ids_list, polygons_list = targets
+        b, c, h, w = hm_kp.shape
+        d_max = math.sqrt(h ** 2 + w ** 2)
+
+        hm_kp = sigmoid_(hm_kp)
+        all_pixel_locations = torch.from_numpy(
+            cartesian([np.arange(h, dtype=np.float32), np.arange(w, dtype=np.float32)])).to(self._device)
+
+        terms_neg = []
+        terms_pos = []
+        terms_eng = []
+        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
+        # foreach every matrix
+        for b_i in range(b):
+            hm_mat = hm_kp[b_i, 0, :, :]
+            polygons = polygons_list[b_i]
+            # compute probability sum
+            p_sum = hm_mat.sum()
+            # compose key points for the one img
+            target_pixel_locations = torch.from_numpy(np.vstack(polygons)).float().to(self._device)
+            # compute distance matrix
+            diff = all_pixel_locations.unsqueeze(1) - target_pixel_locations.unsqueeze(0)
+            # Euclidean distance
+            d_matrix = torch.min(torch.sum(diff.pow(2), -1).float().sqrt(), 1)[0].reshape(h, w)
+            # compute term_1
+            terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_matrix / p_sum))
+            # compute term_2
+            # expand the prob vector to n*m matrix
+            pos_mask = d_matrix == 0
+            pos_vec = hm_mat.masked_select(pos_mask)
+            d_min_target = (1 - pos_vec).pow(self._beta) * d_max
+            terms_pos.append(d_min_target.sum()/torch.clamp(pos_mask.float().sum(), min=1))
+            # compute energy
+            pt_mask = (hm_mat > self._th) * (1 - pos_mask)
+            pt_pred = hm_mat.masked_select(pt_mask)
+            energy_sum = (pt_pred - self._th).pow(self._beta).sum() * d_max
+            pt_sum = pt_mask.sum()
+            if pt_sum == 0:
+                terms_eng.append(zero_tensor(self._device))
+            else:
+                terms_eng.append(energy_sum / pt_sum)
+        # compute WHD loss
+        term_neg = torch.stack(terms_neg).mean()
+        term_pos = torch.stack(terms_pos).mean()
+        term_eng = torch.stack(terms_eng).mean()
+        return self._weight * self._alpha * term_pos, self._weight * (1 - self._alpha) * term_neg, self._weight * (1 - self._alpha) * term_eng
 
 
 class WHLoss(object):

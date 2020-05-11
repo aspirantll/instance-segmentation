@@ -38,7 +38,7 @@ def eval_outputs(output_dir, eval_dataloader, transforms, model, epoch, decode_c
     dets_path = os.path.join(output_dir, "{}_dets.json".format(epoch))
     infos_path = os.path.join(output_dir, "{}_infos.json".format(epoch))
 
-    if os.path.exists(dets_path) or os.path.exists(infos_path):
+    if not os.path.exists(dets_path) or not os.path.exists(infos_path):
         decode.device = device
 
         # eval

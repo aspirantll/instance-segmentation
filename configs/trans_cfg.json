@@ -1,6 +1,9 @@
 {
   "train_trans": {
-      "trans_seq": ["random_crop", "random_hflip", "random_brightness"],
+      "trans_seq": ["resize", "random_crop", "random_hflip", "random_brightness"],
+	  "resize": {
+		"target_size": [1024, 512]
+	  },
       "random_brightness": {
         "ratio": 1.0,
         "shift_value": 10
@@ -11,13 +14,16 @@
       },
       "random_crop":{
         "ratio": 1.0,
-        "crop_size": [1024, 512],
+        "crop_size": [512, 256],
         "method": "random",
         "allow_outside_center": false
       }
     },
     "val_trans": {
-      "trans_seq": []
+      "trans_seq": ["resize"],
+	  "resize": {
+		"target_size": [1024, 512]
+	  }
     },
     "normalize": {
       "div_value": 255.0,

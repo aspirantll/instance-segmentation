@@ -152,20 +152,20 @@ def aug_group(pts, center_loc, alpha_ratio=2):
     if area == 0:
         return None
 
-    n = sorted_kp.shape[0]
-    r = np.max(np.vstack([np.sqrt(np.power(
-        sorted_kp[(i+1) % n] - sorted_kp[i], 2).sum()) for i in range(n)])) * alpha_ratio
-    bound_polygons = alphashape(pts, 1/r)
-
-    poly = filter_ghost_polygons(bound_polygons, center_loc)
-    if poly is None and cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
-        return sorted_kp
-    else:
-        return poly
-    # if cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
+    # n = sorted_kp.shape[0]
+    # r = np.max(np.vstack([np.sqrt(np.power(
+    #     sorted_kp[(i+1) % n] - sorted_kp[i], 2).sum()) for i in range(n)])) * alpha_ratio
+    # bound_polygons = alphashape(pts, 1/r)
+    #
+    # poly = filter_ghost_polygons(bound_polygons, center_loc)
+    # if poly is None and cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
     #     return sorted_kp
     # else:
-    #     return None
+    #     return poly
+    if cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
+        return sorted_kp
+    else:
+        return None
 
 
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
@@ -282,7 +282,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     color = [int(e) for e in np.random.random_integers(0, 256, 3)]
     for i in range(objs_num):
         # filter the boxes
-        h, w = tuple(center_whs[i])
+        h, w = tuple(center_whs[i] * 2)
         center_loc = center_indexes[i]
 
         center_loc = transforms.detransform_pixel(center_loc, infos)[0]
