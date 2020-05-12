@@ -1,10 +1,9 @@
 data:
   test_dir: s3://ll-coco/datasets/cityscapes/leftImg8bit/test
   test_image: #C:\data\checkpoints\erf\000000000026.jpg
-  save_dir: s3://ll-coco/checkpoints/test
+  save_dir: ./test
   dataset: dir
   batch_size: 1
-  input_size: (512, 1024)
   num_classes: 8
 
 seed: 1

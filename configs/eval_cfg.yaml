@@ -3,7 +3,6 @@ data:
   save_dir: s3://ll-coco/checkpoints/eval
   dataset: cityscapes
   batch_size: 16
-  input_size: (512, 1024)
   num_classes: -1
   subset: val
 

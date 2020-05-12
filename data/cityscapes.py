@@ -171,7 +171,7 @@ def parse_label_json(label_json):
 
 class CityscapesDataset(Dataset):
 
-    def __init__(self, root, input_size, transforms=None, subset='train'):
+    def __init__(self, root, transforms=None, subset='train'):
         self.images_root = os.path.join(root, 'leftImg8bit/' + subset)
         self.labels_root = os.path.join(root, 'gtFine/' + subset)
 

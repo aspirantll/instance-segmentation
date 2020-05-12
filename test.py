@@ -16,6 +16,9 @@ import torch
 import os
 import cv2
 import numpy as np
+import moxing as mox
+mox.file.shift('os', 'mox')
+
 from utils.logger import Logger
 from models import create_model
 import data
@@ -50,8 +53,7 @@ trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
-if isinstance(data_cfg.input_size, str):
-    data_cfg.input_size = eval(data_cfg.input_size)
+
 # validate the arguments
 print("test dir:", data_cfg.test_dir)
 if data_cfg.test_dir is not None and not os.path.exists(data_cfg.test_dir):
@@ -99,7 +101,7 @@ def handle_output(inputs, infos, model, transforms):
             det = dets[i]
             logger.write("in {} detected {} objs".format(name, len(det)))
 
-            img = cv2.imread(img_path)
+            img = cv2.imdecode(np.fromstring(mox.file.read(img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
             for j in range(len(det)):
                 img = visualize_instance(img, [det[j][-1]], mask=True)
             save_path = os.path.join(data_cfg.save_dir, name)
@@ -126,8 +128,7 @@ def test():
     if data_cfg.test_dir is not None:
         # initialize the dataloader by dir
         test_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.test_dir,
-                                               input_size=data_cfg.input_size, with_label=False,
-                                               phase="test", transforms=transforms)
+                                              with_label=False, phase="test", transforms=transforms)
         # foreach the images
         for iter_id, test_data in enumerate(test_dataloader):
             # to device

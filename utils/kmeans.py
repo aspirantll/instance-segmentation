@@ -53,7 +53,7 @@ def kmeans(
     iteration = 0
     # tqdm_meter = tqdm(desc='[running kmeans]')
     while True:
-        dis = pairwise_distance_function(X, initial_state)
+        dis = pairwise_distance_function(X, initial_state, device)
         min_distance, choice_cluster = torch.min(dis, dim=1)
 
         # set cluster id = num_cluster if min distance is greater than allow distance

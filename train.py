@@ -60,8 +60,6 @@ trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
-if isinstance(data_cfg.input_size, str):
-    data_cfg.input_size = eval(data_cfg.input_size)
 if isinstance(opt_cfg.lr, str):
     opt_cfg.lr = eval(opt_cfg.lr)
 
@@ -266,12 +264,11 @@ def train():
     """
     # initialize the dataloader by dir
     train_transforms = CommonTransforms(trans_cfg, "train")
-    train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir, input_size=data_cfg.input_size,
+    train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
                                            phase="train", transforms=train_transforms)
 
     eval_transforms = CommonTransforms(trans_cfg, "val")
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
-                                           input_size=data_cfg.input_size,
                                            phase="val", transforms=eval_transforms)
 
     # initialize model, optimizer, loss_fn

@@ -61,8 +61,6 @@ trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
-if isinstance(data_cfg.input_size, str):
-    data_cfg.input_size = eval(data_cfg.input_size)
 # validate the arguments
 print("eval dir:", data_cfg.eval_dir)
 if data_cfg.eval_dir is not None and not os.path.exists(data_cfg.eval_dir):
@@ -140,7 +138,6 @@ def eval_weights_dir(weights_dir):
 if __name__ == "__main__":
     transforms = CommonTransforms(trans_cfg, "val")
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.eval_dir,
-                                          input_size=data_cfg.input_size,
                                           phase=data_cfg.subset, transforms=transforms)
     # eval
     print("start to evaluate...")

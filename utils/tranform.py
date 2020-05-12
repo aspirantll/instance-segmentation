@@ -160,7 +160,10 @@ class CommonTransforms(object):
 
         if 'resize' in self.configer.get('val_trans', 'trans_seq'):
             if 'target_size' in self.configer.get('val_trans', 'resize'):
-                target_size = tuple(self.configer.get('val_trans', 'resize')['target_size'])
+                scale = self.configer.get('val_trans', 'resize')['scale']
+                w_scale_ratio, h_scale_ratio = 1 / scale, 1 / scale
+                height, width = img_size
+                target_size = (int(round(width * w_scale_ratio)), int(round(height * h_scale_ratio)))
                 transform_matrix = image.get_affine_transform(img_size[::-1], target_size, inv=True)
                 reversed_pixels = image.apply_affine_transform(reversed_pixels, transform_matrix, img_size[::-1])
 
