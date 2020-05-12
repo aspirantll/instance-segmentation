@@ -62,13 +62,12 @@ def collate_fn_without_label(batch):
     return input_tensors, trans_infos
 
 
-def get_dataloader(batch_size, dataset_type, data_dir, phase, input_size, transforms=None
+def get_dataloader(batch_size, dataset_type, data_dir, phase, transforms=None
                    , ann_file=None, num_workers=0, random=False, with_label=True):
     """
     initialize the data loader, and then return a data loader
     :param num_workers: worker num
     :param phase: "train", "test", "val"
-    :param input_size: tuple(height * width)
     :param batch_size:
     :param dataset_type:
     :param data_dir:
@@ -81,7 +80,7 @@ def get_dataloader(batch_size, dataset_type, data_dir, phase, input_size, transf
     dataset_builder_class = datasetBuildersMap[dataset_type]
     # initialize dataset
     dataset_builder = dataset_builder_class(data_dir, phase, ann_file)
-    dataset = dataset_builder.get_dataset(input_size=input_size, transforms=transforms)
+    dataset = dataset_builder.get_dataset(transforms=transforms)
     if with_label:
         if is_train_phase(phase):
             # initialize sampler

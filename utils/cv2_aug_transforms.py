@@ -460,38 +460,16 @@ class Resize(object):
         scale_max: the max scale to resize.
     """
 
-    def __init__(self, target_size=None, min_side_length=None, max_side_length=None, max_side_bound=None):
-        self.target_size = target_size
-        self.min_side_length = min_side_length
-        self.max_side_length = max_side_length
-        self.max_side_bound = max_side_bound
+    def __init__(self, scale):
+        self.scale = scale
 
     def __call__(self, img, label=None):
         assert isinstance(img, np.ndarray)
 
         height, width, _ = img.shape
-        if self.target_size is not None:
-            target_size = self.target_size
-            w_scale_ratio = self.target_size[0] / width
-            h_scale_ratio = self.target_size[1] / height
+        w_scale_ratio, h_scale_ratio = 1 / self.scale, 1 / self.scale
+        target_size = (int(round(width * w_scale_ratio)), int(round(height * h_scale_ratio)))
 
-        elif self.min_side_length is not None:
-            scale_ratio = self.min_side_length / min(width, height)
-            w_scale_ratio, h_scale_ratio = scale_ratio, scale_ratio
-            target_size = [int(round(width * w_scale_ratio)), int(round(height * h_scale_ratio))]
-
-        else:
-            scale_ratio = self.max_side_length / max(width, height)
-            w_scale_ratio, h_scale_ratio = scale_ratio, scale_ratio
-            target_size = [int(round(width * w_scale_ratio)), int(round(height * h_scale_ratio))]
-
-        if self.max_side_bound is not None and max(target_size) > self.max_side_bound:
-            d_ratio = self.max_side_bound / max(target_size)
-            w_scale_ratio = d_ratio * w_scale_ratio
-            h_scale_ratio = d_ratio * h_scale_ratio
-            target_size = [int(round(width * w_scale_ratio)), int(round(height * h_scale_ratio))]
-
-        target_size = tuple(target_size)
         transform_matrix = image.get_affine_transform(img.shape[:2][::-1], target_size)
         img = cv2.warpAffine(img, transform_matrix, target_size)
         if label is not None:
@@ -667,23 +645,9 @@ class CV2AugCompose(object):
                 )
 
             if 'resize' in self.configer.get('train_trans', 'trans_seq') + shuffle_train_trans:
-                if 'target_size' in self.configer.get('train_trans', 'resize'):
+                if 'scale' in self.configer.get('train_trans', 'resize'):
                     self.transforms['resize'] = Resize(
-                        target_size=self.configer.get('train_trans', 'resize')['target_size']
-                    )
-                if 'min_side_length' in self.configer.get('train_trans', 'resize'):
-                    if 'max_side_bound' in self.configer.get('train_trans', 'resize'):
-                        self.transforms['resize'] = Resize(
-                            min_side_length=self.configer.get('train_trans', 'resize')['min_side_length'],
-                            max_side_bound=self.configer.get('train_trans', 'resize')['max_side_bound'],
-                        )
-                    else:
-                        self.transforms['resize'] = Resize(
-                            min_side_length=self.configer.get('train_trans', 'resize')['min_side_length']
-                        )
-                if 'max_side_length' in self.configer.get('train_trans', 'resize'):
-                    self.transforms['resize'] = Resize(
-                        max_side_length=self.configer.get('train_trans', 'resize')['max_side_length']
+                        scale=self.configer.get('train_trans', 'resize')['scale']
                     )
 
         else:
@@ -826,23 +790,9 @@ class CV2AugCompose(object):
                 )
 
             if 'resize' in self.configer.get('val_trans', 'trans_seq'):
-                if 'target_size' in self.configer.get('val_trans', 'resize'):
+                if 'scale' in self.configer.get('val_trans', 'resize'):
                     self.transforms['resize'] = Resize(
-                        target_size=self.configer.get('val_trans', 'resize')['target_size']
-                    )
-                if 'min_side_length' in self.configer.get('val_trans', 'resize'):
-                    if 'max_side_bound' in self.configer.get('val_trans', 'resize'):
-                        self.transforms['resize'] = Resize(
-                            min_side_length=self.configer.get('val_trans', 'resize')['min_side_length'],
-                            max_side_bound=self.configer.get('val_trans', 'resize')['max_side_bound'],
-                        )
-                    else:
-                        self.transforms['resize'] = Resize(
-                            min_side_length=self.configer.get('val_trans', 'resize')['min_side_length']
-                        )
-                if 'max_side_length' in self.configer.get('val_trans', 'resize'):
-                    self.transforms['resize'] = Resize(
-                        max_side_length=self.configer.get('val_trans', 'resize')['max_side_length']
+                        scale=self.configer.get('val_trans', 'resize')['scale']
                     )
 
     def __call__(self, img, label=None):

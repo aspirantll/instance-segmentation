@@ -9,6 +9,6 @@ data:
 
 seed: 1
 model_type: erf
-weights_path: E:\checkpoints\erf2\erf_weights_00000294.pth
+weights_path: E:\checkpoints\erf2\erf_weights_00000035.pth
 decode_cfg_path: .\configs\decode_cfg.yaml
 trans_cfg_path: .\configs\trans_cfg.json

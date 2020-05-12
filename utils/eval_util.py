@@ -127,9 +127,7 @@ def evaluate_from_json(data_cfg, epoch, output_dir, dataset, logger, use_salt=Tr
     cityscapes_eval.main()
 
 
-def evaluate_model(data_cfg, eval_dataloader, transforms, model, epoch, dataset, decode_cfg, device, logger, use_salt=True):
-    # initialize
-    output_dir = data_cfg.save_dir
-    eval_outputs(output_dir, eval_dataloader, transforms, model, epoch, decode_cfg, device, logger)
-    evaluate_from_json(data_cfg, epoch, output_dir, dataset, logger)
+def evaluate_model(data_cfg, eval_dataloader, transforms, model, epoch, dataset, decode_cfg, device, logger):
+    eval_outputs(data_cfg.save_dir, eval_dataloader, transforms, model, epoch, decode_cfg, device, logger)
+    evaluate_from_json(data_cfg, epoch, data_cfg.save_dir, dataset, logger)
 

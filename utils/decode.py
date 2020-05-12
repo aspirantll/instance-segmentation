@@ -22,6 +22,7 @@ from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
 
 base_dir = r"E:\checkpoints\test"
+scale = 1
 
 def to_numpy(tensor):
     return tensor.cpu().numpy()
@@ -190,7 +191,7 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
 
 def draw_box(box_sizes, centers, trans_info, transforms):
     centers = [transforms.detransform_pixel(center, trans_info)[0] for center in centers]
-    box_sizes = [box_size[::-1] for box_size in box_sizes]
+    box_sizes = [box_size[::-1] * scale for box_size in box_sizes]
 
     img = cv2.imread(trans_info.img_path)
     img = visualize_box(img, centers, box_sizes, mask=True)
@@ -215,7 +216,7 @@ def draw_candid(kps, lt, rb, img, color):
                               color=color)
 
 
-def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th=100):
+def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
     cat, height, width = wh.size()
     center_mask = select_points(conf_mat, cls_th)
     center_cls = to_numpy(cls_mat.masked_select(center_mask))
@@ -236,7 +237,9 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th=100):
         confs = center_confs[select_indexes]
         whs = center_whs[:, select_indexes]
         centers = center_indexes[select_indexes, :]
-        boxes = np.array([[*(centers[j] - whs[:, j]/2), *(centers[j] + whs[:, j]/2), confs[j]] for j in range(centers.shape[0])], dtype=np.float32)
+        transformed_centers = transforms.detransform_pixel(centers, info)[:, ::-1]
+        scaled_whs = whs * scale
+        boxes = np.array([[*(transformed_centers[j] - scaled_whs[:, j]/2), *(transformed_centers[j] + scaled_whs[:, j]/2), confs[j]] for j in range(transformed_centers.shape[0])], dtype=np.float32)
         keep = py_cpu_nms(boxes, thresh=0.5)
 
         keep_center_cls.extend(cls[keep])
@@ -282,7 +285,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     color = [int(e) for e in np.random.random_integers(0, 256, 3)]
     for i in range(objs_num):
         # filter the boxes
-        h, w = tuple(center_whs[i] * 2)
+        h, w = tuple(center_whs[i] * scale)
         center_loc = center_indexes[i]
 
         center_loc = transforms.detransform_pixel(center_loc, infos)[0]
@@ -348,7 +351,7 @@ def decode_output(outs, infos, transforms, decode_cfg, device):
 
         # handle the center point
         max_conf_mat, cls_mat = hm_cls_mat.max(0)
-        center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, wh_mat, hm_cls_mat.shape[0], decode_cfg.cls_th)
+        center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, wh_mat, hm_cls_mat.shape[0], decode_cfg.cls_th, transforms, info)
         if decode_cfg.draw_flag:
             img = cv2.imread(info.img_path)
             draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")

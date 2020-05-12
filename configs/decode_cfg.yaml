@@ -1,4 +1,4 @@
-cls_th: 3000
+cls_th: 800
 kp_th: 8000
 obj_pixel_th: 4
 wh_delta: 0.2

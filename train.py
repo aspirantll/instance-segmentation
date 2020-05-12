@@ -52,8 +52,6 @@ trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
-if isinstance(data_cfg.input_size, str):
-    data_cfg.input_size = eval(data_cfg.input_size)
 if isinstance(opt_cfg.lr, str):
     opt_cfg.lr = eval(opt_cfg.lr)
 
@@ -164,7 +162,6 @@ def load_state_dict(model, save_dir, pretrained):
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
                 best_ap = checkpoint["best_ap"] if "best_ap" in checkpoint else 0
-                # save_checkpoint(model.state_dict(), -1, 0, data_cfg.save_dir)
                 return start_epoch + 1, best_ap
         model.init_weight()
     return 0, 0
@@ -255,12 +252,11 @@ def train():
     """
     # initialize the dataloader by dir
     train_transforms = CommonTransforms(trans_cfg, "train")
-    train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir, input_size=data_cfg.input_size,
+    train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
                                            phase="train", transforms=train_transforms)
 
     eval_transforms = CommonTransforms(trans_cfg, "val")
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
-                                           input_size=data_cfg.input_size,
                                            phase="val", transforms=eval_transforms)
 
     # initialize model, optimizer, loss_fn

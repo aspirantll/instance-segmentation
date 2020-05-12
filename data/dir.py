@@ -19,10 +19,9 @@ class DirDataset(data.Dataset):
     """
     the dataset for image dir.
     """
-    def __init__(self, data_dir, input_size, transforms=None, from_file=False):
+    def __init__(self, data_dir, transforms=None, from_file=False):
         # save the parameters
         self._data_dir = data_dir
-        self._input_size=input_size
         if transforms is not None:
             self._transforms = transforms  # ADDED THIS
         # scan the dir
@@ -31,7 +30,7 @@ class DirDataset(data.Dataset):
 
     def __getitem__(self, index):
         # locating index
-        path = os.path.join(self._data_dir, self.imgs[index])
+        path = self.imgs[index]
         input_img = load_rgb_image(path)
         if self._transforms is not None:
             input_img, _, trans_info = self._transforms(input_img, img_path=path)

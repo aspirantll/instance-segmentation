@@ -48,10 +48,12 @@ data_cfg = cfg.data
 decode_cfg = Config(cfg.decode_cfg_path)
 trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
+if 'resize' in trans_cfg.get('val_trans', 'trans_seq'):
+    decode.scale = trans_cfg.get('val_trans', 'resize')['scale']
+
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
-if isinstance(data_cfg.input_size, str):
-    data_cfg.input_size = eval(data_cfg.input_size)
+
 # validate the arguments
 print("test dir:", data_cfg.test_dir)
 if data_cfg.test_dir is not None and not os.path.exists(data_cfg.test_dir):
@@ -126,8 +128,7 @@ def test():
     if data_cfg.test_dir is not None:
         # initialize the dataloader by dir
         test_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.test_dir,
-                                               input_size=data_cfg.input_size, with_label=False,
-                                               phase="test", transforms=transforms)
+                                              with_label=False, phase="test", transforms=transforms)
         # foreach the images
         for iter_id, test_data in enumerate(test_dataloader):
             # to device
