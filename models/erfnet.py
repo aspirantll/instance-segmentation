@@ -109,8 +109,10 @@ class UpsamplerBlock (nn.Module):
 
 
 class Decoder (nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, heads):
         super().__init__()
+        self.mid_out = None
+        self.heads = heads
 
         self.layers = nn.ModuleList()
 
@@ -122,30 +124,46 @@ class Decoder (nn.Module):
         self.layers.append(non_bottleneck_1d(16, 0, 1))
         self.layers.append(non_bottleneck_1d(16, 0, 1))
 
-        self.output_conv = nn.ConvTranspose2d(
-            16, num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
+        for head, dims in self.heads.items():
+            output_conv = nn.ConvTranspose2d(
+                16, dims, 2, stride=2, padding=0, output_padding=0, bias=True)
+            self.__setattr__(head, output_conv)
 
     def forward(self, input):
         output = input
 
         for layer in self.layers:
             output = layer(output)
+        self.mid_out = output
+        outs = {}
+        for head, _ in self.heads.items():
+            output_conv = self.__getattr__(head)
+            outs[head] = output_conv(self.mid_out)
 
-        output = self.output_conv(output)
-
-        return output
+        return outs
 
 # ERFNet
 
 
 class ERFNet(nn.Module):
-    def __init__(self, heads, num_classes, fixed_parts=None):  # use encoder to pass pretrained encoder
+    def __init__(self, num_classes, fixed_parts=None):  # use encoder to pass pretrained encoder
         super().__init__()
-        self.heads = heads
         self.encoder = Encoder(num_classes)
-        for head, dims in self.heads.items():
-            decoder = Decoder(dims)
-            self.__setattr__(head, decoder)
+
+        # Decoders for cls and box size
+        heads_cb = {
+            "hm_cls": num_classes,
+            "wh": 2
+        }
+        self.decoder_cb = Decoder(heads_cb)
+
+        # Decoders for boundary
+        heads_ak = {
+            "hm_kp": 1,
+            "ae": 2
+        }
+        self.decoder_ak = Decoder(heads_ak)
+
         if fixed_parts is not None:
             for part_name in fixed_parts:
                 part_m = self.__getattr__(part_name)
@@ -153,15 +171,14 @@ class ERFNet(nn.Module):
                     p.requires_grad = False
 
     def forward(self, input):
-        output = self.encoder(input)  # predict=False by default
-        out = {}
-        for head in self.heads:
-            decoder = self.__getattr__(head)
-            out[head] = decoder(output)
-        return out
+        features = self.encoder(input)  # predict=False by default
+        outs = {}
+        outs.update(self.decoder_ak(features))
+        outs.update(self.decoder_cb(features))
+        return outs
 
     def init_weight(self):
-        def init_model_weights(layers, method="xavier", std=0.01, bias=None):
+        def init_model_weights(layers, method="xavier", std=0.01):
             """
             init the weights for model
             :param layers:
@@ -184,17 +201,11 @@ class ERFNet(nn.Module):
 
                     if m.bias is not None:
                         torch.nn.init.constant_(m.bias, 0)
-            if bias is not None:
-                torch.nn.init.constant_(layers.output_conv.bias, bias)
 
-        # hm_cls
-        init_model_weights(self.hm_cls, method="normal", std=0.01, bias=-2.19)
-        # hm_kp
-        init_model_weights(self.hm_kp, method="normal", std=0.01, bias=-2.19)
-        # hm_wh
-        init_model_weights(self.wh, method="normal", std=0.001)
-        # hm_ae
-        init_model_weights(self.ae, method="normal", std=0.001)
+        # decoder_ak
+        init_model_weights(self.decoder_ak, method="normal", std=0.01)
+        # decoder_cb
+        init_model_weights(self.decoder_cb, method="normal", std=0.01)
 
     def load_pretrained_weight(self):
         pass

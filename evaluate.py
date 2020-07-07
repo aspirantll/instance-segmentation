@@ -16,6 +16,9 @@ import argparse
 import torch
 import os
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
+
 import data
 from models import create_model
 

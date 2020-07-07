@@ -16,6 +16,8 @@ import torch
 import os
 import time
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
 from concurrent.futures import ThreadPoolExecutor
 
 import data
@@ -118,8 +120,8 @@ def get_optimizer(model, opt):
 
 def init_loss_fn():
     cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    # kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
+    kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
+    # kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
     ae_loss_fn = AELoss(device)
     wh_loss_fn = WHLoss(device)
     return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn)

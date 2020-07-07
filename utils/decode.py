@@ -12,7 +12,6 @@ __version__ = "1.0.0"
 import os
 from typing import Iterable
 from utils import image
-from alphashape import alphashape
 import cv2
 import torch
 import torch.nn as nn
@@ -21,7 +20,7 @@ from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
 
-base_dir = r"E:\checkpoints\test"
+base_dir = r"D:\checkpoints\test"
 scale = 1
 
 def to_numpy(tensor):

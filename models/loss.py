@@ -53,7 +53,6 @@ class WHDLoss(object):
         terms_neg = []
         terms_pos = []
         terms_eng = []
-        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
         # foreach every matrix
         for b_i in range(b):
             hm_mat = hm_kp[b_i, 0, :, :]
@@ -80,7 +79,7 @@ class WHDLoss(object):
                 d_min_target = (1 - pos_vec).pow(self._beta) * d_max
                 terms_pos.append(d_min_target.sum() / torch.clamp(pos_mask.float().sum(), min=1))
                 # compute energy
-                pt_mask = (hm_mat > self._th) * (1 - pos_mask)
+                pt_mask = (hm_mat > self._th)*(1-pos_mask)
                 pt_pred = hm_mat.masked_select(pt_mask)
                 energy_sum = (pt_pred - self._th).pow(self._beta).sum() * d_max
                 pt_sum = pt_mask.sum()
@@ -198,7 +197,6 @@ class KPFocalLoss(FocalLoss):
     def __call__(self, hm_kp, targets):
         # prepare step
         hm_pred = sigmoid_(hm_kp)
-        print("kp mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
         cls_ids_list, polygons_list = targets
         kp_mask = torch.from_numpy(generate_kp_mask(hm_kp.shape, polygons_list, strategy="smoothing")).to(self._device)
         return super().__call__(hm_kp, kp_mask)
@@ -216,7 +214,6 @@ class ClsFocalLoss(FocalLoss):
     def __call__(self, hm_cls, targets):
         # prepare step
         hm_pred = sigmoid_(hm_cls)
-        print("cls mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
         cls_ids_list, polygons_list = targets
         centers_list = [[poly.mean(0).astype(np.int32) for poly in polygons] for polygons in polygons_list]
         box_sizes = [[tuple(polygon.max(0) - polygon.min(0)) for polygon in polygons] for polygons in polygons_list]

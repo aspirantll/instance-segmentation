@@ -16,6 +16,9 @@ import torch
 import os
 import cv2
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
+
 from utils.logger import Logger
 from models import create_model
 import data
