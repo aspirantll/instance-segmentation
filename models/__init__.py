@@ -30,7 +30,13 @@ model_map = {
 def create_model(model_type, num_classes):
     if model_type not in model_map:
         raise ValueError("model_type must be in {}".format(model_map.keys()))
+    heads = {
+        "hm_cls": num_classes,
+        "hm_kp": 1,
+        "ae": 2,
+        "wh": 2
+    }
     model_class = model_map[model_type]
-    return model_class(num_classes)
+    return model_class(heads, num_classes)
 
 

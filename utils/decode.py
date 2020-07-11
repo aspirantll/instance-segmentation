@@ -19,9 +19,11 @@ import numpy as np
 from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
+from utils import parell_util
 
-base_dir = r"D:\checkpoints\test"
+base_dir = r"/media/liulei/Data/cityscapes/leftImg8bit/val"
 scale = 1
+
 
 def to_numpy(tensor):
     return tensor.cpu().numpy()
@@ -322,6 +324,27 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     return n_clss, n_confs, n_centers, kps
 
 
+def decode_single(hm_cls_mat, hm_kp_mat, ae_mat, wh_mat, info, transforms, decode_cfg, device):
+    hm_kp_mat = hm_kp_mat[0]
+
+    # handle the center point
+    max_conf_mat, cls_mat = hm_cls_mat.max(0)
+    center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, wh_mat,
+                                                                        hm_cls_mat.shape[0], decode_cfg.cls_th,
+                                                                        transforms, info)
+    if decode_cfg.draw_flag:
+        img = cv2.imread(info.img_path)
+        draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")
+        draw_box(center_whs, center_indexes, info, transforms)
+
+    # group the key points
+    center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
+                                                                , center_indexes, center_cls, center_confs, info,
+                                                                decode_cfg, device)
+
+    return ([e for e in zip(center_cls, center_confs, center_indexes, groups)],)
+
+
 def decode_output(outs, infos, transforms, decode_cfg, device):
     """
     decode the model output
@@ -338,30 +361,7 @@ def decode_output(outs, infos, transforms, decode_cfg, device):
     ae = outs["ae"]
     wh = outs["wh"]
 
-    # for each to handle the out
-    b, cls, h, w = hm_cls.shape
-    dets = []
-    for b_i in range(b):
-        hm_cls_mat = hm_cls[b_i]
-        hm_kp_mat = hm_kp[b_i, 0]
-        ae_mat = ae[b_i]
-        wh_mat = wh[b_i]
-        info = infos[b_i]
+    dets = parell_util.multi_apply(decode_single, hm_cls, hm_kp, ae, wh, infos, transforms=transforms
+                                   , decode_cfg=decode_cfg, device=device)
 
-        # handle the center point
-        max_conf_mat, cls_mat = hm_cls_mat.max(0)
-        center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, wh_mat, hm_cls_mat.shape[0], decode_cfg.cls_th, transforms, info)
-        if decode_cfg.draw_flag:
-            img = cv2.imread(info.img_path)
-            draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")
-            draw_box(center_whs, center_indexes, info, transforms)
-
-        # group the key points
-        center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
-                                                                    , center_indexes, center_cls, center_confs, info,
-                                                                    decode_cfg, device)
-
-        # append the results
-        dets.append([e for e in zip(center_cls, center_confs, center_indexes, groups)])
-
-    return dets
+    return dets[0]

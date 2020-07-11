@@ -27,6 +27,7 @@ from utils.visualize import visualize_instance
 from utils import image
 from configs import Config, Configer
 from utils.tranform import CommonTransforms
+from utils import parell_util
 
 
 # global torch configs for training
@@ -60,7 +61,7 @@ if data_cfg.num_classes == -1:
 # validate the arguments
 print("test dir:", data_cfg.test_dir)
 if data_cfg.test_dir is not None and not os.path.exists(data_cfg.test_dir):
-    raise Exception("the train dir cannot be found.")
+    raise Exception("the test dir cannot be found.")
 
 print("save dir:", data_cfg.save_dir)
 if not os.path.exists(data_cfg.save_dir):
@@ -91,26 +92,26 @@ def load_state_dict(model):
     logger.write("loaded the weights:" + cfg.weights_path)
 
 
+def post_handle(det, info):
+    img_path = info.img_path
+    name = os.path.basename(img_path)
+    logger.write("in {} detected {} objs".format(name, len(det)))
+
+    img = cv2.imread(img_path)
+    for j in range(len(det)):
+        img = visualize_instance(img, [det[j][-1]], mask=True)
+    save_path = os.path.join(data_cfg.save_dir, name)
+    cv2.imwrite(save_path, img)
+    logger.write("detected result saved in {}".format(save_path))
+
+
 def handle_output(inputs, infos, model, transforms):
     inputs = inputs.to(device)
     # forward the models and loss
     with torch.no_grad():
         outputs = model(inputs)
         dets = decode.decode_output(outputs, infos, transforms, decode_cfg, device)
-        for i in range(len(dets)):
-            info = infos[i]
-            img_path = info.img_path
-            name = os.path.basename(img_path)
-            det = dets[i]
-            logger.write("in {} detected {} objs".format(name, len(det)))
-
-            img = cv2.imread(img_path)
-            for j in range(len(det)):
-                img = visualize_instance(img, [det[j][-1]], mask=True)
-            save_path = os.path.join(data_cfg.save_dir, name)
-            cv2.imwrite(save_path, img)
-            logger.write("detected result saved in {}".format(save_path))
-
+        parell_util.multi_apply(post_handle, dets, infos)
 
 def test():
     """

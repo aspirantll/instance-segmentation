@@ -243,7 +243,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
         del inputs, loss
         torch.cuda.empty_cache()
         if (iter_id + 1) % cfg.save_span == 0:
-            executor.submit(save_checkpoint, model.state_dict(), epoch, running_loss.avg, args.save_dir, iter_id)
+            executor.submit(save_checkpoint, model.state_dict(), epoch, running_loss.avg, data_cfg.save_dir, iter_id)
     return running_loss, avg_loss_states
 
 
