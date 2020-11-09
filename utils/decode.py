@@ -16,12 +16,14 @@ import cv2
 import torch
 import torch.nn as nn
 import numpy as np
+import moxing as mox
+
 from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
 from utils import parell_util
 
-base_dir = r"/media/liulei/Data/cityscapes/leftImg8bit/val"
+base_dir = r"./test"
 scale = 1
 
 
@@ -171,9 +173,9 @@ def aug_group(pts, center_loc, alpha_ratio=2):
 
 
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
-    cv2.imwrite(r'{}\mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
+    cv2.imwrite(r'{}/mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
     kp_arr = to_numpy(kp_mask.nonzero())
-    img = cv2.imread(infos.img_path)
+    img = cv2.imdecode(np.fromstring(mox.file.read(infos.img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
     draw_kp(img, kp_arr, transforms, kp_threshold, infos, keyword)
 
 
@@ -185,7 +187,7 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
         # put to groups
         img = visualize_kp(img, true_pixel)
     cv2.imwrite(
-        r'{}\{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
+        r'{}/{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
         img)
     return img
 
@@ -194,10 +196,10 @@ def draw_box(box_sizes, centers, trans_info, transforms):
     centers = [transforms.detransform_pixel(center, trans_info)[0] for center in centers]
     box_sizes = [box_size[::-1] * scale for box_size in box_sizes]
 
-    img = cv2.imread(trans_info.img_path)
+    img = cv2.imdecode(np.fromstring(mox.file.read(trans_info.img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
     img = visualize_box(img, centers, box_sizes, mask=True)
     cv2.imwrite(
-        r'{}\{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
+        r'{}/{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
         img)
 
 
@@ -282,7 +284,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     kps = []
     n_clss = []
     n_confs = []
-    img = cv2.imread(infos.img_path)
+    img = cv2.imdecode(np.fromstring(mox.file.read(infos.img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
     color = [int(e) for e in np.random.random_integers(0, 256, 3)]
     for i in range(objs_num):
         # filter the boxes

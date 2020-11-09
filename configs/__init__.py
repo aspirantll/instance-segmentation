@@ -26,7 +26,7 @@ class Config(object):
         if cfg is None:
             with open(cfg_path, "r", encoding='utf-8') as f:
                 cfg_str = f.read()
-                self._cfg = yaml.load(cfg_str, Loader=yaml.FullLoader)
+                self._cfg = yaml.load(cfg_str)
         else:
             self._cfg = cfg
         # scan the configs, then set attribute
@@ -42,6 +42,7 @@ class Config(object):
 
     def __str__(self):
         return str(self.__dict__)
+
 
 
 class Configer(object):

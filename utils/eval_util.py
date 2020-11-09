@@ -13,6 +13,7 @@ import uuid
 import json
 import cv2
 import torch
+import moxing as mox
 import data
 import numpy as np
 from tqdm import tqdm
@@ -64,10 +65,8 @@ def eval_outputs(output_dir, eval_dataloader, transforms, model, epoch, decode_c
         logger.write("[{}] finish evaluate step".format(epoch))
         dets_json = json.dumps(dets_list, cls=NpEncoder)
         info_json = json.dumps(info_list, cls=NpEncoder)
-        with open(dets_path, 'w') as f:
-            f.write(dets_json)
-        with open(infos_path, 'w') as f:
-            f.write(info_json)
+        mox.file.write(dets_path, dets_json)
+        mox.file.write(infos_path, info_json)
         logger.write("[{}] finish save step".format(epoch))
 
 
