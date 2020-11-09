@@ -1,14 +1,10 @@
 {
   "train_trans": {
     "trans_seq": [
-      "resize",
       "random_crop",
       "random_hflip",
       "random_brightness"
     ],
-    "resize": {
-      "scale": 2
-    },
     "random_brightness": {
       "ratio": 1.0,
       "shift_value": 10
@@ -20,20 +16,15 @@
     "random_crop": {
       "ratio": 1.0,
       "crop_size": [
-        512,
-        256
+        1024,
+        512
       ],
       "method": "random",
       "allow_outside_center": false
     }
   },
   "val_trans": {
-    "trans_seq": [
-      "resize"
-    ],
-    "resize": {
-      "scale": 2
-    }
+    "trans_seq": []
   },
   "normalize": {
     "div_value": 255.0,

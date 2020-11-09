@@ -13,7 +13,7 @@ __version__ = "1.0.0"
 
 import numpy as np
 import cv2
-import moxing as mox
+
 from scipy.sparse import lil_matrix, issparse
 from skimage.measure import find_contours
 
@@ -95,7 +95,7 @@ def clamp_pixel(pixel, size):
 
 
 def load_rgb_image(img_path):
-    input_img = cv2.imdecode(np.fromstring(mox.file.read(img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
+    input_img = cv2.imread(img_path)
     if input_img is None:
         raise ValueError("the img load error:{}".format(img_path))
     else:

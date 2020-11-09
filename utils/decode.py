@@ -12,18 +12,16 @@ __version__ = "1.0.0"
 import os
 from typing import Iterable
 from utils import image
-from alphashape import alphashape
 import cv2
 import torch
 import torch.nn as nn
 import numpy as np
-import moxing as mox
-
 from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
+from utils import parell_util
 
-base_dir = r"./test"
+base_dir = r"/media/liulei/Data/cityscapes/leftImg8bit/val"
 scale = 1
 
 
@@ -173,9 +171,9 @@ def aug_group(pts, center_loc, alpha_ratio=2):
 
 
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
-    cv2.imwrite(r'{}/mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
+    cv2.imwrite(r'{}\mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
     kp_arr = to_numpy(kp_mask.nonzero())
-    img = cv2.imdecode(np.fromstring(mox.file.read(infos.img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
+    img = cv2.imread(infos.img_path)
     draw_kp(img, kp_arr, transforms, kp_threshold, infos, keyword)
 
 
@@ -187,19 +185,19 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
         # put to groups
         img = visualize_kp(img, true_pixel)
     cv2.imwrite(
-        r'{}/{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
+        r'{}\{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
         img)
     return img
 
 
 def draw_box(box_sizes, centers, trans_info, transforms):
     centers = [transforms.detransform_pixel(center, trans_info)[0] for center in centers]
-    box_sizes = [box_size[::-1] for box_size in box_sizes]
+    box_sizes = [box_size[::-1] * scale for box_size in box_sizes]
 
-    img = cv2.imdecode(np.fromstring(mox.file.read(trans_info.img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
+    img = cv2.imread(trans_info.img_path)
     img = visualize_box(img, centers, box_sizes, mask=True)
     cv2.imwrite(
-        r'{}/{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
+        r'{}\{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
         img)
 
 
@@ -223,9 +221,9 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
     cat, height, width = wh.size()
     center_mask = select_points(conf_mat, cls_th)
     center_cls = to_numpy(cls_mat.masked_select(center_mask))
-    center_indexes = transforms.detransform_pixel(to_numpy(center_mask.nonzero()), info)[:, ::-1]
+    center_indexes = to_numpy(center_mask.nonzero())
     center_confs = to_numpy(conf_mat.masked_select(center_mask)).astype(np.float32)
-    center_whs = to_numpy(wh.masked_select(center_mask)).reshape(cat, -1) * scale
+    center_whs = to_numpy(wh.masked_select(center_mask)).reshape(cat, -1)
 
     keep_center_cls = []
     keep_center_indexes = []
@@ -240,7 +238,9 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
         confs = center_confs[select_indexes]
         whs = center_whs[:, select_indexes]
         centers = center_indexes[select_indexes, :]
-        boxes = np.array([[*(centers[j] - whs[:, j]/2), *(centers[j] + whs[:, j]/2), confs[j]] for j in range(centers.shape[0])], dtype=np.float32)
+        transformed_centers = transforms.detransform_pixel(centers, info)[:, ::-1]
+        scaled_whs = whs * scale
+        boxes = np.array([[*(transformed_centers[j] - scaled_whs[:, j]/2), *(transformed_centers[j] + scaled_whs[:, j]/2), confs[j]] for j in range(transformed_centers.shape[0])], dtype=np.float32)
         keep = py_cpu_nms(boxes, thresh=0.5)
 
         keep_center_cls.extend(cls[keep])
@@ -282,7 +282,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     kps = []
     n_clss = []
     n_confs = []
-    img = cv2.imdecode(np.fromstring(mox.file.read(infos.img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
+    img = cv2.imread(infos.img_path)
     color = [int(e) for e in np.random.random_integers(0, 256, 3)]
     for i in range(objs_num):
         # filter the boxes
@@ -319,9 +319,30 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
             n_confs.append(center_confs[i])
     if decode_cfg.draw_flag:
         cv2.imwrite(
-            r'{}/{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
+            r'{}\{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
             img)
     return n_clss, n_confs, n_centers, kps
+
+
+def decode_single(hm_cls_mat, hm_kp_mat, ae_mat, wh_mat, info, transforms, decode_cfg, device):
+    hm_kp_mat = hm_kp_mat[0]
+
+    # handle the center point
+    max_conf_mat, cls_mat = hm_cls_mat.max(0)
+    center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, wh_mat,
+                                                                        hm_cls_mat.shape[0], decode_cfg.cls_th,
+                                                                        transforms, info)
+    if decode_cfg.draw_flag:
+        img = cv2.imread(info.img_path)
+        draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")
+        draw_box(center_whs, center_indexes, info, transforms)
+
+    # group the key points
+    center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
+                                                                , center_indexes, center_cls, center_confs, info,
+                                                                decode_cfg, device)
+
+    return ([e for e in zip(center_cls, center_confs, center_indexes, groups)],)
 
 
 def decode_output(outs, infos, transforms, decode_cfg, device):
@@ -340,30 +361,7 @@ def decode_output(outs, infos, transforms, decode_cfg, device):
     ae = outs["ae"]
     wh = outs["wh"]
 
-    # for each to handle the out
-    b, cls, h, w = hm_cls.shape
-    dets = []
-    for b_i in range(b):
-        hm_cls_mat = hm_cls[b_i]
-        hm_kp_mat = hm_kp[b_i, 0]
-        ae_mat = ae[b_i]
-        wh_mat = wh[b_i]
-        info = infos[b_i]
+    dets = parell_util.multi_apply(decode_single, hm_cls, hm_kp, ae, wh, infos, transforms=transforms
+                                   , decode_cfg=decode_cfg, device=device)
 
-        # handle the center point
-        max_conf_mat, cls_mat = hm_cls_mat.max(0)
-        center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, wh_mat, hm_cls_mat.shape[0], decode_cfg.cls_th, transforms, info)
-        if decode_cfg.draw_flag:
-            img = cv2.imdecode(np.fromstring(mox.file.read(info.img_path, binary=True), np.uint8), cv2.IMREAD_COLOR)
-            draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")
-            draw_box(center_whs, center_indexes, info, transforms)
-
-        # group the key points
-        center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
-                                                                    , center_indexes, center_cls, center_confs, info,
-                                                                    decode_cfg, device)
-
-        # append the results
-        dets.append([e for e in zip(center_cls, center_confs, center_indexes, groups)])
-
-    return dets
+    return dets[0]

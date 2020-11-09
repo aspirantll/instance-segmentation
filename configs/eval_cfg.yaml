@@ -1,14 +1,16 @@
 data:
-  eval_dir:  s3://ll-coco/datasets/cityscapes
-  save_dir: s3://ll-coco/checkpoints/eval
+  eval_dir:  D:\cityscapes
+  save_dir: D:\checkpoints\erf\eval
   dataset: cityscapes
-  batch_size: 16
+  batch_size: 2
+  input_size: (512, 1024)
   num_classes: -1
   subset: val
 
 seed: 1
 model_type: erf
-weights_path: #s3://ll-coco/checkpoints/model_weights_00000253.pth
-weights_dir: s3://ll-coco/erf/
-decode_cfg_path:  s3://ll-coco/codes/configs/decode_cfg.yaml
-trans_cfg_path: s3://ll-coco/codes/configs/trans_cfg.json
+weights_path: D:\checkpoints\erf\erf_weights_00000207.pth
+weights_dir:  #E:\checkpoints\weights
+decode_cfg_path: .\configs\decode_cfg.yaml
+trans_cfg_path: .\configs\trans_cfg.json
+

@@ -790,9 +790,9 @@ class CV2AugCompose(object):
                 )
 
             if 'resize' in self.configer.get('val_trans', 'trans_seq'):
-                if 'scale' in self.configer.get('train_trans', 'resize'):
+                if 'scale' in self.configer.get('val_trans', 'resize'):
                     self.transforms['resize'] = Resize(
-                        scale=self.configer.get('train_trans', 'resize')['scale']
+                        scale=self.configer.get('val_trans', 'resize')['scale']
                     )
 
     def __call__(self, img, label=None):

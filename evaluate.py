@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+
 __copyright__ = \
 """
 Copyright &copyright © (c) 2020 The Board of xx University.
@@ -12,11 +13,12 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import argparse
-import os
-os.system("rm /home/work/anaconda3/lib/libmkldnn.so")
-os.system("rm /home/work/anaconda3/lib/libmkldnn.so.0")
 import torch
+import os
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
+
 import data
 from models import create_model
 
@@ -24,9 +26,7 @@ from configs import Config, Configer
 from utils.logger import Logger
 from utils import decode
 from utils.tranform import CommonTransforms
-from utils.eval_util import evaluate_model, evaluate_masks_from_json
-import moxing as mox
-mox.file.shift('os', 'mox')
+from utils.eval_util import evaluate_model
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True
@@ -45,12 +45,6 @@ print("loading the arguments...")
 parser = argparse.ArgumentParser(description="test")
 # add arguments
 parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/eval_cfg.yaml", type=str)
-parser.add_argument("--start_epoch", help="start epoch desc", dest="start_epoch", default="-1", type=int)
-
-# for modelarts
-parser.add_argument("--data_url", required=False, type=str)
-parser.add_argument("--init_method", required=False, type=str)
-parser.add_argument("--train_url", required=False, type=str)
 # parse args
 args = parser.parse_args()
 
@@ -58,6 +52,10 @@ cfg = Config(args.cfg_path)
 data_cfg = cfg.data
 decode_cfg = Config(cfg.decode_cfg_path)
 trans_cfg = Configer(configs=cfg.trans_cfg_path)
+
+if 'resize' in trans_cfg.get('val_trans', 'trans_seq'):
+    decode.scale = trans_cfg.get('val_trans', 'resize')['scale']
+
 
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
@@ -111,27 +109,23 @@ def evaluate_model_by_weights(eval_dataloader, transforms, weights_path, logger=
     evaluate_model(data_cfg, eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
 
 
-def load_weight_paths(weights_dir, start_epoch):
+def load_weight_paths(weights_dir):
     weight_paths = []
 
     file_list = os.listdir(weights_dir)
     file_list.sort(reverse=True)
-    start_flag = False
     for file in file_list:
-        if not start_flag and (start_epoch < 0 or "{}_weights_{:0>8}.pth".format(cfg.model_type, start_epoch) == file):
-            start_flag = True
-        if start_flag and file.startswith("{}_weights_".format(cfg.model_type)) and file.endswith(".pth"):
+        if file.startswith("{}_weights_".format(cfg.model_type)) and file.endswith(".pth"):
             weight_path = os.path.join(weights_dir, file)
             weight_paths.append(weight_path)
-
     return weight_paths
 
 
 def eval_weights_dir(weights_dir):
-    weight_paths = load_weight_paths(weights_dir, args.start_epoch)
+    weight_paths = load_weight_paths(weights_dir)
     logger.write("the num of weights file: {}".format(len(weight_paths)))
     for iter_id, weight_path in enumerate(weight_paths):
-        if iter_id % 20 == 0:
+        if iter_id % 10 == 0:
             evaluate_model_by_weights(eval_dataloader, transforms, weight_path, logger)
 
 

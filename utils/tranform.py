@@ -159,7 +159,7 @@ class CommonTransforms(object):
         img_size = info.img_size
 
         if 'resize' in self.configer.get('val_trans', 'trans_seq'):
-            if 'target_size' in self.configer.get('val_trans', 'resize'):
+            if 'scale' in self.configer.get('val_trans', 'resize'):
                 scale = self.configer.get('val_trans', 'resize')['scale']
                 w_scale_ratio, h_scale_ratio = 1 / scale, 1 / scale
                 height, width = img_size

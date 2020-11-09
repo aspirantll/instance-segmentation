@@ -8,13 +8,11 @@ __copyright__ = \
     """
 __authors__ = ""
 __version__ = "1.0.0"
-
 import os
 import uuid
 import json
 import cv2
 import torch
-import moxing as mox
 import data
 import numpy as np
 from tqdm import tqdm
@@ -66,8 +64,10 @@ def eval_outputs(output_dir, eval_dataloader, transforms, model, epoch, decode_c
         logger.write("[{}] finish evaluate step".format(epoch))
         dets_json = json.dumps(dets_list, cls=NpEncoder)
         info_json = json.dumps(info_list, cls=NpEncoder)
-        mox.file.write(dets_path, dets_json)
-        mox.file.write(infos_path, info_json)
+        with open(dets_path, 'w') as f:
+            f.write(dets_json)
+        with open(infos_path, 'w') as f:
+            f.write(info_json)
         logger.write("[{}] finish save step".format(epoch))
 
 
@@ -75,9 +75,6 @@ def evaluate_from_json(data_cfg, epoch, output_dir, dataset, logger, use_salt=Tr
     dets_list = json.load(open(os.path.join(output_dir, "{}_dets.json".format(epoch))))
     info_list = json.load(open(os.path.join(output_dir, "{}_infos.json".format(epoch))))
 
-    logger.write("[{}] finish load dets json".format(epoch))
-
-    output_dir = r"./test"
     eval_labels = data.get_eval_labels(dataset)
     label_names = [label[1] for label in eval_labels]
     label_ids = [label[2] for label in eval_labels]

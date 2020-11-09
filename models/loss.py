@@ -10,12 +10,11 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import torch
-import math
 import torch.nn as nn
 import numpy as np
-from sklearn.utils.extmath import cartesian
+from .efficientdet.loss import FocalLoss as DetFocalLoss
 
-from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_wh_target
+from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_annotations
 
 
 def zero_tensor(device):
@@ -24,99 +23,6 @@ def zero_tensor(device):
 
 def sigmoid_(tensor):
     return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1-1e-4)
-
-
-class WHDLoss(object):
-
-    def __init__(self, device, alpha=0.8, beta=2, th=0.5, weight=0.1):
-        self._device = device
-        self._alpha = alpha
-        self._beta = beta
-        self._th = th
-        self._weight = weight
-
-
-    @staticmethod
-    def get_loss_names():
-        return ["kp_pos", "kp_neg", "kp_energy"]
-
-    def __call__(self, hm_kp, targets):
-        # prepare step
-        cls_ids_list, polygons_list = targets
-        b, c, h, w = hm_kp.shape
-        d_max = math.sqrt(h ** 2 + w ** 2)
-
-        hm_kp = sigmoid_(hm_kp)
-        all_pixel_locations = torch.from_numpy(
-            cartesian([np.arange(h, dtype=np.float32), np.arange(w, dtype=np.float32)])).to(self._device)
-
-        terms_neg = []
-        terms_pos = []
-        terms_eng = []
-        print("kp mean:{}, max:{}, min:{}".format(hm_kp.mean().item(), hm_kp.max().item(), hm_kp.min().item()))
-        # foreach every matrix
-        for b_i in range(b):
-            hm_mat = hm_kp[b_i, 0, :, :]
-            polygons = polygons_list[b_i]
-            # compute probability sum
-            p_sum = hm_mat.sum()
-            if len(polygons) == 0:
-                terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_max / p_sum))
-                terms_pos.append(zero_tensor(self._device))
-                terms_eng.append(zero_tensor(self._device))
-            else:
-                # compose key points for the one img
-                target_pixel_locations = torch.from_numpy(np.vstack(polygons)).float().to(self._device)
-                # compute distance matrix
-                diff = all_pixel_locations.unsqueeze(1) - target_pixel_locations.unsqueeze(0)
-                # Euclidean distance
-                d_matrix = torch.min(torch.sum(diff.pow(2), -1).float().sqrt(), 1)[0].reshape(h, w)
-                # compute term_1
-                terms_neg.append(torch.sum(hm_mat.pow(self._beta) * d_matrix / p_sum))
-                # compute term_2
-                # expand the prob vector to n*m matrix
-                pos_mask = d_matrix == 0
-                pos_vec = hm_mat.masked_select(pos_mask)
-                d_min_target = (1 - pos_vec).pow(self._beta) * d_max
-                terms_pos.append(d_min_target.sum() / torch.clamp(pos_mask.float().sum(), min=1))
-                # compute energy
-                pt_mask = (hm_mat > self._th) * (1 - pos_mask)
-                pt_pred = hm_mat.masked_select(pt_mask)
-                energy_sum = (pt_pred - self._th).pow(self._beta).sum() * d_max
-                pt_sum = pt_mask.sum()
-                if pt_sum == 0:
-                    terms_eng.append(zero_tensor(self._device))
-                else:
-                    terms_eng.append(energy_sum / pt_sum)
-        # compute WHD loss
-        term_neg = torch.stack(terms_neg).mean()
-        term_pos = torch.stack(terms_pos).mean()
-        term_eng = torch.stack(terms_eng).mean()
-        return self._weight * self._alpha * term_pos, self._weight * (1 - self._alpha) * term_neg, self._weight * (1 - self._alpha) * term_eng
-
-
-class WHLoss(object):
-    def __init__(self, device, type='smooth_l1', weight=0.1):
-        self._device = device
-        self._weight = weight
-        if type == 'l1':
-            self.loss = torch.nn.functional.l1_loss
-        elif type == 'smooth_l1':
-            self.loss = torch.nn.functional.smooth_l1_loss
-
-    @staticmethod
-    def get_loss_names():
-        return ["wh"]
-
-    def __call__(self, wh, targets):
-        cls_ids_list, polygons_list = targets
-        centers_list = [[poly.mean(0).astype(np.int32) for poly in polygons] for polygons in polygons_list]
-        box_sizes_list = [[(polygon.max(0) - polygon.min(0)) for polygon in polygons] for polygons in polygons_list]
-        wh_target, wh_mask = generate_wh_target(wh.shape, centers_list, box_sizes_list)
-        wh_target, wh_mask = torch.from_numpy(wh_target).to(self._device), torch.from_numpy(wh_mask).to(self._device)
-        loss = self.loss(wh * wh_mask, wh_target * wh_mask, reduction='sum')
-        loss = loss / (wh_mask.sum() + 1e-4)
-        return [self._weight * loss]
 
 
 def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum"):
@@ -183,22 +89,16 @@ class FocalLoss(object):
         pos_loss = pos_loss.sum((1, 2, 3)) / torch.clamp_min(loss_normalizer, 1)
         neg_loss = neg_loss.sum((1, 2, 3)) / torch.clamp_min(loss_normalizer, 1)
 
-        return pos_loss.mean(), neg_loss.mean()
+        return pos_loss.mean()+neg_loss.mean()
 
 
 class KPFocalLoss(FocalLoss):
 
-    def __init__(self, device, alpha=0.2, beta=2, epsilon=0.9, init_loss_normalizer=100):
+    def __init__(self, device, alpha=0.25, beta=2, epsilon=0.9, init_loss_normalizer=100):
         super(KPFocalLoss, self).__init__(device, alpha, beta, epsilon, init_loss_normalizer)
-
-    @staticmethod
-    def get_loss_names():
-        return ["kp_pos", "kp_neg"]
 
     def __call__(self, hm_kp, targets):
         # prepare step
-        hm_pred = sigmoid_(hm_kp)
-        print("kp mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
         cls_ids_list, polygons_list = targets
         kp_mask = torch.from_numpy(generate_kp_mask(hm_kp.shape, polygons_list, strategy="smoothing")).to(self._device)
         return super().__call__(hm_kp, kp_mask)
@@ -209,14 +109,9 @@ class ClsFocalLoss(FocalLoss):
     def __init__(self, device, alpha=2, beta=4, epsilon=0.99, init_loss_normalizer=100):
         super(ClsFocalLoss, self).__init__(device, alpha, beta, epsilon, init_loss_normalizer)
 
-    @staticmethod
-    def get_loss_names():
-        return ["cls_pos", "cls_neg"]
-
     def __call__(self, hm_cls, targets):
         # prepare step
         hm_pred = sigmoid_(hm_cls)
-        print("cls mean:{}, max:{}, min:{}".format(hm_pred.mean().item(), hm_pred.max().item(), hm_pred.min().item()))
         cls_ids_list, polygons_list = targets
         centers_list = [[poly.mean(0).astype(np.int32) for poly in polygons] for polygons in polygons_list]
         box_sizes = [[tuple(polygon.max(0) - polygon.min(0)) for polygon in polygons] for polygons in polygons_list]
@@ -230,9 +125,6 @@ class AELoss(object):
     def __init__(self, device, weight=0.1):
         self._device = device
         self._weight = weight
-
-    def get_loss_names(self):
-        return ["ae_loss"]
 
     def __call__(self, ae, targets):
         """
@@ -268,39 +160,26 @@ class AELoss(object):
 
         # compute mean loss
         ae_loss = torch.stack(ae_losses).mean()
-        return [self._weight * ae_loss]
+        return self._weight * ae_loss
 
 
 class ComposeLoss(nn.Module):
-    def __init__(self, cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn):
+    def __init__(self, device):
         super(ComposeLoss, self).__init__()
-        self._cls_loss_fn = cls_loss_fn
-        self._kp_loss_fn = kp_loss_fn
-        self._ae_loss_fn = ae_loss_fn
-        self._wh_loss_fn = wh_loss_fn
-
-        self._loss_names = []
-        self._loss_names.extend(cls_loss_fn.get_loss_names())
-        self._loss_names.extend(kp_loss_fn.get_loss_names())
-        self._loss_names.extend(ae_loss_fn.get_loss_names())
-        self._loss_names.extend(wh_loss_fn.get_loss_names())
-
-        self._loss_names.append("total_loss")
+        self._device = device
+        self._loss_names = ["cls_loss", "wh_loss", "kp_loss", "ae_loss", "total_loss"]
+        self.det_focal_loss = DetFocalLoss()
+        self.kp_loss = KPFocalLoss(device)
+        self.ae_loss = AELoss(device)
 
     def forward(self, outputs, targets):
+        annotations = torch.from_numpy(generate_annotations(targets)).to(self._device)
         # unpack the output
-        hm_cls = outputs["hm_cls"]
-        hm_kp = outputs["hm_kp"]
-        ae = outputs["ae"]
-        wh = outputs["wh"]
-
+        kp_heat, ae_map, regression, classification, anchors = outputs
         losses = []
-        # compute losses
-        losses.extend(self._cls_loss_fn(hm_cls, targets))
-        losses.extend(self._kp_loss_fn(hm_kp, targets))
-        losses.extend(self._ae_loss_fn(ae, targets))
-        losses.extend(self._wh_loss_fn(wh, targets))
-
+        losses.extend(self.det_focal_loss(classification, regression, anchors, annotations))
+        losses.append(self.kp_loss(kp_heat, targets))
+        losses.append(self.ae_loss(ae_map, targets))
         # compute total loss
         total_loss = torch.stack(losses).sum()
         losses.append(total_loss)
@@ -309,3 +188,6 @@ class ComposeLoss(nn.Module):
 
     def get_loss_states(self):
         return self._loss_names
+
+
+

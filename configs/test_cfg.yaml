@@ -1,13 +1,14 @@
 data:
-  test_dir: s3://ll-coco/datasets/cityscapes/leftImg8bit/test
-  test_image: #C:\data\checkpoints\erf\000000000026.jpg
-  save_dir: ./test
+  test_dir: D:\cityscapes\leftImg8bit\val
+  test_image: #E:\checkpoints\erf\
+  save_dir: D:\checkpoints\test
   dataset: dir
   batch_size: 1
+  input_size: (512, 1024)
   num_classes: 8
 
 seed: 1
 model_type: erf
-weights_path: s3://ll-coco/checkpoints/model_weights_00000214.pth
-decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml
-trans_cfg_path: s3://ll-coco/codes/configs/trans_cfg.json
+weights_path: D:\checkpoints\erf\erf_weights_00000207.pth
+decode_cfg_path: .\configs\decode_cfg.yaml
+trans_cfg_path: .\configs\trans_cfg.json

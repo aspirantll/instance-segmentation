@@ -215,5 +215,27 @@ def generate_wh_target(target_size, centers_list, box_sizes_list):
     return wh_target, wh_mask
 
 
+def generate_annotations(targets):
+    """
+    generate the annotations
+    :return:
+    """
+    cls_ids_list, polygons_list = targets
+    boxes_list = [[(polygon.min(0), polygon.max(0)) for polygon in polygons] for polygons in polygons_list]
+
+    b = len(cls_ids_list)
+    max_num = max(len(cls_ids) for cls_ids in cls_ids_list)
+    annotations = np.ones((b, max_num, 5), dtype=np.float32)*-1
+
+    for b_i in range(b):
+        cls_ids = cls_ids_list[b_i]
+        boxes = boxes_list[b_i]
+        for o_j in range(len(cls_ids)):
+            annotations[b_i, o_j, :2] =  boxes[o_j][0]
+            annotations[b_i, o_j, 2:4] =  boxes[o_j][1]
+            annotations[b_i, o_j, 4] =  cls_ids[o_j]
+
+    return annotations
+
 
 
