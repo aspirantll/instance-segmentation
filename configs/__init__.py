@@ -44,7 +44,6 @@ class Config(object):
         return str(self.__dict__)
 
 
-
 class Configer(object):
 
     def __init__(self, args_parser=None, configs=None, config_dict=None):

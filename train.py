@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import data
 from configs import Config, Configer
-from models import create_model, ComposeLoss, ClsFocalLoss, AELoss, KPFocalLoss, WHLoss, WHDLoss
+from models import EfficientSeg, ComposeLoss
 from utils.tranform import CommonTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
@@ -48,7 +48,6 @@ args = parser.parse_args()
 cfg = Config(args.cfg_path)
 data_cfg = cfg.data
 opt_cfg = cfg.optimizer
-loss_cfg = cfg.loss
 decode_cfg = Config(cfg.decode_cfg_path)
 trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
@@ -117,16 +116,6 @@ def get_optimizer(model, opt):
     elif opt.type == "Adadelta":
         return torch.optim.Adadelta(filter_params, lr=opt.lr)
 
-
-def init_loss_fn():
-    cls_loss_fn = ClsFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    kp_loss_fn = KPFocalLoss(device, alpha=loss_cfg.focal_alpha, beta=loss_cfg.focal_beta)
-    # kp_loss_fn = WHDLoss(device, alpha=loss_cfg.whd_alpha, beta=loss_cfg.whd_beta, th=loss_cfg.kp_threshold)
-    ae_loss_fn = AELoss(device)
-    wh_loss_fn = WHLoss(device)
-    return ComposeLoss(cls_loss_fn, kp_loss_fn, ae_loss_fn, wh_loss_fn)
-
-
 def load_state_dict(model, save_dir, pretrained):
     """
     if save_dir contains the checkpoint, then the model will load lastest weights
@@ -135,24 +124,12 @@ def load_state_dict(model, save_dir, pretrained):
     :return:
     """
     if pretrained is not None:
-        if cfg.model_type == "erf":
-            pretrained_dict = torch.load(pretrained, map_location=device_type)
-            model_dict = model.state_dict()
-            # remove the module suffix and filter the removed layers
-            filtered_dict = {}
-            for k, v in pretrained_dict["state_dict"].items():
-                if k.startswith("module."):
-                    k = k[7:]
-                if k in model_dict:
-                    filtered_dict[k] = v
-            # update the current model
-            model_dict.update(filtered_dict)
-            model.load_state_dict(model_dict)
-            # model.init_weight()
-            # executor.submit(save_checkpoint, model.state_dict(), -1, 0, data_cfg.save_dir)
-            logger.write("loaded the pretrained weights:" + pretrained)
-        elif cfg.model_type == 'dla':
-            model.base.load_pretrained_model(data='', name=pretrained, hash='ba72cf86')
+        state_dict = torch.load(pretrained)
+        try:
+            ret = model.load_state_dict(state_dict, strict=False)
+            print(ret)
+        except RuntimeError as e:
+            print('Ignoring ' + str(e) + '"')
     else:
         file_list = os.listdir(save_dir)
         file_list.sort(reverse=True)
@@ -262,11 +239,13 @@ def train():
                                            phase="val", transforms=eval_transforms)
 
     # initialize model, optimizer, loss_fn
-    model = create_model(cfg.model_type, data_cfg.num_classes)
+    model = EfficientSeg(data_cfg.num_classes, compound_coef=cfg.compound_coef,
+                                 ratios=eval(cfg.anchors_ratios), scales=eval(cfg.anchors_scales))
+
     start_epoch, best_ap = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
     optimizer = get_optimizer(model, opt_cfg)
-    loss_fn = init_loss_fn()
+    loss_fn = ComposeLoss(device)
 
     # train model
     # foreach epoch
