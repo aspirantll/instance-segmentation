@@ -221,7 +221,7 @@ def generate_annotations(targets):
     :return:
     """
     cls_ids_list, polygons_list = targets
-    boxes_list = [[(polygon.min(0), polygon.max(0)) for polygon in polygons] for polygons in polygons_list]
+    boxes_list = [[(polygon.min(0)[::-1], polygon.max(0)[::-1]) for polygon in polygons] for polygons in polygons_list]
 
     b = len(cls_ids_list)
     max_num = max(len(cls_ids) for cls_ids in cls_ids_list)
