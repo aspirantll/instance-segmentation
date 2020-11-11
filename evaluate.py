@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import data
-from models import create_model
+from models import EfficientSeg
 
 from configs import Config, Configer
 from utils.logger import Logger
@@ -102,7 +102,7 @@ def evaluate_model_by_weights(eval_dataloader, transforms, weights_path, logger=
     :return:
     """
     # initialize
-    model = create_model(cfg.model_type, data_cfg.num_classes)
+    model = EfficientSeg(data_cfg.num_classes, compound_coef=cfg.compound_coef)
     epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
@@ -115,7 +115,7 @@ def load_weight_paths(weights_dir):
     file_list = os.listdir(weights_dir)
     file_list.sort(reverse=True)
     for file in file_list:
-        if file.startswith("{}_weights_".format(cfg.model_type)) and file.endswith(".pth"):
+        if file.startswith("efficient_weights_") and file.endswith(".pth"):
             weight_path = os.path.join(weights_dir, file)
             weight_paths.append(weight_path)
     return weight_paths

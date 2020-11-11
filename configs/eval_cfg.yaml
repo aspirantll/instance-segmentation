@@ -8,7 +8,7 @@ data:
   subset: val
 
 seed: 1
-model_type: erf
+compound_coef: 4
 weights_path: D:\checkpoints\erf\erf_weights_00000207.pth
 weights_dir:  #E:\checkpoints\weights
 decode_cfg_path: .\configs\decode_cfg.yaml

@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from utils.logger import Logger
-from models import create_model
+from models import EfficientSeg
 import data
 from utils import decode
 from utils.visualize import visualize_instance
@@ -110,8 +110,9 @@ def handle_output(inputs, infos, model, transforms):
     # forward the models and loss
     with torch.no_grad():
         outputs = model(inputs)
-        dets = decode.decode_output(outputs, infos, transforms, decode_cfg, device)
-        parell_util.multi_apply(post_handle, dets, infos)
+        dets = decode.decode_output(inputs, outputs, infos, transforms, decode_cfg, device)
+        for i in range(len(dets)):
+            post_handle(dets[i], infos[i])
 
 def test():
     """
@@ -120,7 +121,7 @@ def test():
     :return:
     """
     # initialize model
-    model = create_model(cfg.model_type, data_cfg.num_classes)
+    model = EfficientSeg(data_cfg.num_classes, compound_coef=cfg.compound_coef)
     load_state_dict(model)
     model = model.to(device)
 

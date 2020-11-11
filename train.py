@@ -93,9 +93,9 @@ def save_checkpoint(model_dict, epoch, best_ap, save_dir, iter_id=None):
         'best_ap': best_ap
     }
     if iter_id is None:
-        weight_path = os.path.join(save_dir, "{}_weights_{:0>8}.pth".format(cfg.model_type, epoch))
+        weight_path = os.path.join(save_dir, "efficient_weights_{:0>8}.pth".format(epoch))
     else:
-        weight_path = os.path.join(save_dir, "{}_weights_{:0>4}_{:0>4}.pth".format(cfg.model_type, epoch, iter_id))
+        weight_path = os.path.join(save_dir, "efficient_weights_{:0>4}_{:0>4}.pth".format(epoch, iter_id))
     # torch.save(best_model_wts, weight_path)
     torch.save(checkpoint, weight_path)
     logger.write("epoch {}, save the weight to {}".format(epoch, weight_path))
@@ -134,7 +134,7 @@ def load_state_dict(model, save_dir, pretrained):
         file_list = os.listdir(save_dir)
         file_list.sort(reverse=True)
         for file in file_list:
-            if file.startswith("{}_weights_".format(cfg.model_type)) and file.endswith(".pth"):
+            if file.startswith("efficient_weights_") and file.endswith(".pth"):
                 weight_path = os.path.join(save_dir, file)
                 checkpoint = torch.load(weight_path, map_location=device_type)
                 model.load_state_dict(checkpoint["state_dict"])

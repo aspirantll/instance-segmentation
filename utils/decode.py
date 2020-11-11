@@ -11,17 +11,20 @@ __version__ = "1.0.0"
 
 import os
 from typing import Iterable
+
+from models.efficientdet.utils import BBoxTransform, ClipBoxes
 from utils import image
 import cv2
 import torch
 import torch.nn as nn
+from torchvision.ops.boxes import batched_nms
 import numpy as np
 from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
 from utils.kmeans import kmeans
 from utils import parell_util
 
-base_dir = r"/media/liulei/Data/cityscapes/leftImg8bit/val"
+base_dir = r"D:\\checkpoints\\test"
 scale = 1
 
 
@@ -171,7 +174,7 @@ def aug_group(pts, center_loc, alpha_ratio=2):
 
 
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
-    cv2.imwrite(r'{}\mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
+    cv2.imwrite(r'{}\\mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
     kp_arr = to_numpy(kp_mask.nonzero())
     img = cv2.imread(infos.img_path)
     draw_kp(img, kp_arr, transforms, kp_threshold, infos, keyword)
@@ -185,7 +188,7 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
         # put to groups
         img = visualize_kp(img, true_pixel)
     cv2.imwrite(
-        r'{}\{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
+        r'{}\\{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
         img)
     return img
 
@@ -197,7 +200,7 @@ def draw_box(box_sizes, centers, trans_info, transforms):
     img = cv2.imread(trans_info.img_path)
     img = visualize_box(img, centers, box_sizes, mask=True)
     cv2.imwrite(
-        r'{}\{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
+        r'{}\\{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
         img)
 
 
@@ -319,25 +322,68 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
             n_confs.append(center_confs[i])
     if decode_cfg.draw_flag:
         cv2.imwrite(
-            r'{}\{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
+            r'{}\\{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
             img)
     return n_clss, n_confs, n_centers, kps
 
 
-def decode_single(hm_cls_mat, hm_kp_mat, ae_mat, wh_mat, info, transforms, decode_cfg, device):
-    hm_kp_mat = hm_kp_mat[0]
+def decode_boxes(x, anchors, regression, classification, threshold, iou_threshold):
+    regressBoxes = BBoxTransform()
+    clipBoxes = ClipBoxes()
 
-    # handle the center point
-    max_conf_mat, cls_mat = hm_cls_mat.max(0)
-    center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, cls_mat, wh_mat,
-                                                                        hm_cls_mat.shape[0], decode_cfg.cls_th,
-                                                                        transforms, info)
-    if decode_cfg.draw_flag:
-        img = cv2.imread(info.img_path)
-        draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")
-        draw_box(center_whs, center_indexes, info, transforms)
+    transformed_anchors = regressBoxes(anchors, regression)
+    transformed_anchors = clipBoxes(transformed_anchors, x)
+    scores = torch.max(classification, dim=2, keepdim=True)[0]
+    scores_over_thresh = (scores > threshold)[:, :, 0]
+
+    dets = []
+    for i in range(x.shape[0]):
+        if scores_over_thresh[i].sum() == 0:
+            dets.append({
+                'rois': np.array(()),
+                'class_ids': np.array(()),
+                'scores': np.array(()),
+            })
+            continue
+
+        classification_per = classification[i, scores_over_thresh[i, :], ...].permute(1, 0)
+        transformed_anchors_per = transformed_anchors[i, scores_over_thresh[i, :], ...]
+        scores_per = scores[i, scores_over_thresh[i, :], ...]
+        scores_, classes_ = classification_per.max(dim=0)
+        anchors_nms_idx = batched_nms(transformed_anchors_per, scores_per[:, 0], classes_, iou_threshold=iou_threshold)
+
+        if anchors_nms_idx.shape[0] != 0:
+            classes_ = classes_[anchors_nms_idx]
+            scores_ = scores_[anchors_nms_idx]
+            boxes_ = transformed_anchors_per[anchors_nms_idx, :]
+
+            dets.append({
+                'rois': boxes_.cpu().numpy(),
+                'class_ids': classes_.cpu().numpy(),
+                'scores': scores_.cpu().numpy(),
+            })
+        else:
+            dets.append({
+                'rois': np.array(()),
+                'class_ids': np.array(()),
+                'scores': np.array(()),
+            })
+
+    return dets
+
+
+def decode_single(kp_heat, ae_mat, boxes, info, transforms, decode_cfg, device):
+    hm_kp_mat = kp_heat[0]
+
+    center_cls = boxes["class_ids"]
+    if center_cls.shape[0] == 0:
+        return ([],)
+    center_indexes = (boxes["rois"][:, :2]+boxes["rois"][:, 2:])/2
+    center_confs = boxes["scores"]
+    center_whs = boxes["rois"][:, 2:] - boxes["rois"][:, :2]
 
     # group the key points
+    draw_box(center_whs, center_indexes, info, transforms)
     center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
                                                                 , center_indexes, center_cls, center_confs, info,
                                                                 decode_cfg, device)
@@ -345,7 +391,7 @@ def decode_single(hm_cls_mat, hm_kp_mat, ae_mat, wh_mat, info, transforms, decod
     return ([e for e in zip(center_cls, center_confs, center_indexes, groups)],)
 
 
-def decode_output(outs, infos, transforms, decode_cfg, device):
+def decode_output(inputs, outs, infos, transforms, decode_cfg, device):
     """
     decode the model output
     :param outs:
@@ -356,12 +402,10 @@ def decode_output(outs, infos, transforms, decode_cfg, device):
     :return:
     """
     # get output
-    hm_cls = torch.sigmoid(outs["hm_cls"])
-    hm_kp = torch.sigmoid(outs["hm_kp"])
-    ae = outs["ae"]
-    wh = outs["wh"]
+    kp_heat, ae_map, regression, classification, anchors = outs
+    det_boxes = decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
 
-    dets = parell_util.multi_apply(decode_single, hm_cls, hm_kp, ae, wh, infos, transforms=transforms
+    dets = parell_util.multi_apply(decode_single, kp_heat, ae_map, det_boxes, infos, transforms=transforms
                                    , decode_cfg=decode_cfg, device=device)
 
     return dets[0]
