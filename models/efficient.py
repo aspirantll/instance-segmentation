@@ -453,7 +453,7 @@ class EfficientNet(nn.Module):
                 feature_maps.append(x)
             last_x = x
         del last_x
-        return feature_maps[1:]
+        return feature_maps
 
 
 def variance_scaling_(tensor, gain=1.):
@@ -466,19 +466,6 @@ def variance_scaling_(tensor, gain=1.):
     std = math.sqrt(gain / float(fan_in))
 
     return _no_grad_normal_(tensor, 0., std)
-
-
-class UpsamplerBlock(nn.Module):
-    def __init__(self, ninput, noutput):
-        super().__init__()
-        self.conv = nn.ConvTranspose2d(
-            ninput, noutput, 3, stride=2, padding=1, output_padding=1, bias=True)
-        self.bn = nn.BatchNorm2d(noutput, eps=1e-3)
-
-    def forward(self, input):
-        output = self.conv(input)
-        output = self.bn(output)
-        return F.relu(output)
 
 
 class EfficientSeg(nn.Module):
@@ -533,13 +520,24 @@ class EfficientSeg(nn.Module):
 
         self.backbone_net = EfficientNet(self.backbone_compound_coef[compound_coef], load_weights)
 
-        self.upsample = nn.Sequential(UpsamplerBlock(self.fpn_num_filters[self.compound_coef], 32),
-            UpsamplerBlock(32, 16))
-        self.kp_header = nn.ConvTranspose2d(
-            16, 1, 2, stride=2, padding=0, output_padding=0, bias=True)
+        num_channels = self.fpn_num_filters[self.compound_coef]
+        self.swish = MemoryEfficientSwish()
+        self.p1_down = nn.Sequential(
+                Conv2dStaticSamePadding(32, 24, 1),
+                nn.BatchNorm2d(24, momentum=0.01, eps=1e-3),
+            )
+        self.p2_down = nn.Sequential(
+                Conv2dStaticSamePadding(num_channels, 32, 1),
+                nn.BatchNorm2d(32, momentum=0.01, eps=1e-3),
+            )
+        self.p1_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.p2_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.p1_conv = SeparableConvBlock(24)
+        self.p2_conv = SeparableConvBlock(32)
 
-        self.ae_header = nn.ConvTranspose2d(
-            16, 2, 2, stride=2, padding=0, output_padding=0, bias=True)
+        self.kp_header = nn.ConvTranspose2d(24, 1, 2, stride=2, padding=0, output_padding=0, bias=True)
+        self.ae_header = nn.ConvTranspose2d(24, 2, 2, stride=2, padding=0, output_padding=0, bias=True)
+
 
     def freeze_bn(self):
         for m in self.modules():
@@ -547,7 +545,7 @@ class EfficientSeg(nn.Module):
                 m.eval()
 
     def forward(self, inputs):
-        _, p3, p4, p5 = self.backbone_net(inputs)
+        p1, p2, p3, p4, p5 = self.backbone_net(inputs)
 
         features = (p3, p4, p5)
         features = self.bifpn(features)
@@ -556,9 +554,10 @@ class EfficientSeg(nn.Module):
         classification = self.classifier(features)
         anchors = self.anchors(inputs, inputs.dtype)
 
-        p1 = self.upsample(features[0])
-        kp_heat = self.kp_header(p1)
-        ae_map = self.ae_header(p1)
+        p2_out = self.p2_conv(self.swish(p2 + self.p2_upsample(self.p2_down(features[0]))))
+        p1_out = self.p1_conv(self.swish(p1 + self.p1_upsample(self.p1_down(p2_out))))
+        kp_heat = self.kp_header(p1_out)
+        ae_map = self.ae_header(p1_out)
         return kp_heat, ae_map, regression, classification, anchors
 
     def init_backbone(self, path):
