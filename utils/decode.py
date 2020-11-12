@@ -134,7 +134,7 @@ def filter_ghost_polygons(polygons, center):
     return max_poly
 
 
-def aug_group(pts, center_loc, alpha_ratio=2):
+def aug_group(pts, center_loc):
     """
     aug the points
     :param pts: n * 2
@@ -378,12 +378,15 @@ def decode_single(kp_heat, ae_mat, boxes, info, transforms, decode_cfg, device):
     center_cls = boxes["class_ids"]
     if center_cls.shape[0] == 0:
         return ([],)
-    center_indexes = (boxes["rois"][:, :2]+boxes["rois"][:, 2:])/2
+    lt = boxes["rois"][:, :2][:, ::-1]
+    rb = boxes["rois"][:, 2:][:, ::-1]
+    center_indexes = (lt+rb)/2
     center_confs = boxes["scores"]
-    center_whs = boxes["rois"][:, 2:] - boxes["rois"][:, :2]
+    center_whs = rb - lt
 
     # group the key points
-    draw_box(center_whs, center_indexes, info, transforms)
+    if decode_cfg.draw_flag:
+        draw_box(center_whs, center_indexes, info, transforms)
     center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
                                                                 , center_indexes, center_cls, center_confs, info,
                                                                 decode_cfg, device)
