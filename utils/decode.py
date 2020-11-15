@@ -9,6 +9,7 @@ __copyright__ = \
 __authors__ = ""
 __version__ = "1.0.0"
 
+import math
 import os
 from typing import Iterable
 
@@ -134,6 +135,29 @@ def filter_ghost_polygons(polygons, center):
     return max_poly
 
 
+def smooth_polygon(polar_pts, sorted_inds, k=360):
+    d_seta = 2*np.pi/12
+    selected_inds = []
+    cur_ind = -1
+    cur_dist = -1
+    cur_bin = 0
+    for ind in sorted_inds:
+        index = math.floor(polar_pts[ind][0]/d_seta)
+        if index != cur_bin:
+            if cur_ind >= 0:
+                selected_inds.append(cur_ind)
+            cur_ind = -1
+            cur_dist = -1
+            cur_bin = index
+        elif polar_pts[ind][1]>cur_dist:
+            cur_ind = ind
+            cur_dist = polar_pts[ind][1]
+    if cur_ind >= 0:
+        selected_inds.append(cur_ind)
+    return selected_inds
+
+
+
 def aug_group(pts, center_loc):
     """
     aug the points
@@ -151,6 +175,7 @@ def aug_group(pts, center_loc):
     internal_point = find_internal_point(pts, center_loc)
     polar_pts = cartesian2polar(pts, internal_point)
     sorted_inds = np.argsort(polar_pts[:, 0])
+    # selected_inds = smooth_polygon(polar_pts, sorted_inds)
     sorted_kp = np.array([pts[ind] for ind in sorted_inds])
 
     area = image.poly_to_mask(sorted_kp).sum()
@@ -309,7 +334,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
             continue
 
         # augment the groups
-        np_poly = aug_group(true_pixels[filter_mask], center_loc, decode_cfg.alpha_ratio)
+        np_poly = aug_group(true_pixels[filter_mask], center_loc)
 
         if np_poly is not None:
             if decode_cfg.draw_flag:

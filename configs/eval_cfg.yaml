@@ -1,6 +1,6 @@
 data:
   eval_dir:  D:\cityscapes
-  save_dir: D:\checkpoints\erf\eval
+  save_dir: D:\checkpoints\eff\eval
   dataset: cityscapes
   batch_size: 2
   input_size: (512, 1024)
@@ -9,7 +9,7 @@ data:
 
 seed: 1
 compound_coef: 4
-weights_path: D:\checkpoints\erf\erf_weights_00000207.pth
+weights_path: D:\checkpoints\eff\efficient_weights_00000231.pth
 weights_dir:  #E:\checkpoints\weights
 decode_cfg_path: .\configs\decode_cfg.yaml
 trans_cfg_path: .\configs\trans_cfg.json
