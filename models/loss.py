@@ -14,7 +14,7 @@ import torch.nn as nn
 import numpy as np
 from .efficientdet.loss import FocalLoss as DetFocalLoss
 
-from utils.target_generator import generate_cls_mask, generate_kp_mask, generate_annotations
+from utils.target_generator import generate_cls_mask, generate_all_annotations
 
 
 def zero_tensor(device):
@@ -99,8 +99,7 @@ class KPFocalLoss(FocalLoss):
 
     def __call__(self, hm_kp, targets):
         # prepare step
-        cls_ids_list, polygons_list = targets
-        kp_mask = torch.from_numpy(generate_kp_mask(hm_kp.shape, polygons_list, strategy="smoothing")).to(self._device)
+        kp_mask = torch.from_numpy(targets).to(self._device)
         return super().__call__(hm_kp, kp_mask)
 
 
@@ -134,8 +133,8 @@ class AELoss(object):
         """
         # prepare step
         b, c, h, w = ae.shape
-        cls_ids_list, polygons_list = targets
-        centers_list = [[poly.mean(0).astype(np.int32) for poly in polygons] for polygons in polygons_list]
+        centers_list, polygons_list = targets
+
         ae_losses = []
         # foreach every batch
         for b_i in range(b):
@@ -143,18 +142,14 @@ class AELoss(object):
             centers, polygons = centers_list[b_i], polygons_list[b_i]
             n = len(centers)
             ae_loss = zero_tensor(self._device)
-            ae_mat = ae[b_i].cpu()
-
-            for c_j in range(n):
-                center = centers[c_j]
-                polygon = polygons[c_j]
-
-                center_tensor = torch.from_numpy(center.astype(np.float32))
-                polygon_tensor = torch.from_numpy(polygon.astype(np.float32))
-
-                ae_tensor = torch.stack([ae_mat[:, p[0], p[1]] for p in polygon])
-
-                ae_loss += (ae_tensor + polygon_tensor - center_tensor).pow(2).sum(dim=1).sqrt().mean()
+            if n > 0:
+                ae_mat = ae[b_i]
+                centers = np.vstack(centers).transpose()
+                polygons = np.vstack(polygons).transpose()
+                center_tensor = torch.from_numpy(centers.astype(np.float32)).to(self._device)
+                polygon_tensor = torch.from_numpy(polygons.astype(np.float32)).to(self._device)
+                ae_tensor = ae_mat[:, polygons[0, :], polygons[1, :]]
+                ae_loss += (ae_tensor + polygon_tensor - center_tensor).pow(2).sum(dim=0).sqrt().mean()
 
             ae_losses.append(ae_loss / max(n, 1))
 
@@ -173,13 +168,15 @@ class ComposeLoss(nn.Module):
         self.ae_loss = AELoss(device)
 
     def forward(self, outputs, targets):
-        annotations = torch.from_numpy(generate_annotations(targets)).to(self._device)
         # unpack the output
         kp_heat, ae_map, regression, classification, anchors = outputs
+        det_annotations, kp_annotations, ae_annotations = generate_all_annotations(kp_heat.shape, targets)
+
+
         losses = []
-        losses.extend(self.det_focal_loss(classification, regression, anchors, annotations))
-        losses.append(self.kp_loss(kp_heat, targets))
-        losses.append(self.ae_loss(ae_map, targets))
+        losses.extend(self.det_focal_loss(classification, regression, anchors, torch.from_numpy(det_annotations).to(self._device)))
+        losses.append(self.kp_loss(kp_heat, kp_annotations))
+        losses.append(self.ae_loss(ae_map, ae_annotations))
         # compute total loss
         total_loss = torch.stack(losses).sum()
         losses.append(total_loss)
