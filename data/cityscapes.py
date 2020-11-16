@@ -204,9 +204,6 @@ class CityscapesDataset(Dataset):
         filenameGt = self.filenamesGt[index]
         with open(filenameGt, 'rb') as f:
             label = parse_label_json(json.load(f))
-        from utils.visualize import visualize_instance
-        img = visualize_instance(input_img, label[1], mask=True)
-        cv2.imwrite("D:\\checkpoints\\test\\"+os.path.basename(filename), img)
         input_img, label, trans_info = self._transforms(input_img, label, img_path)
         return input_img, label, trans_info
 
