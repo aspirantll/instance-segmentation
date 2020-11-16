@@ -1,4 +1,5 @@
 import os
+import cv2
 import json
 import numpy as np
 from torch.utils.data import Dataset
@@ -148,9 +149,17 @@ def is_label(filename):
     return filename.endswith("_polygons.json")
 
 
+def fill_polygon(polygon):
+    min_point = polygon.min(0)
+    max_point = polygon.max(0)
+    box_size = max_point-min_point
+    img = np.zeros((box_size[1], box_size[0]), dtype=np.uint8)
+    img = cv2.fillPoly(img, [polygon-min_point], 1)
+    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    return contours[0].reshape(-1, 2)+min_point
+
+
 def parse_label_json(label_json):
-    height = label_json["imgHeight"]
-    width = label_json["imgWidth"]
     # collect the label data
     polygons = []
     cls_ids = []
@@ -162,9 +171,7 @@ def parse_label_json(label_json):
         cls_ids.append(name2index[label_name])
         # handle boundary
         polygon = np.array(obj["polygon"], dtype=np.int32)
-        polygon[:, 0] = np.clip(polygon[:, 0], a_min=0, a_max=width - 1)
-        polygon[:, 1] = np.clip(polygon[:, 1], a_min=0, a_max=height - 1)
-        polygons.append(polygon)
+        polygons.append(fill_polygon(polygon))
 
     return cls_ids, polygons
 
@@ -197,7 +204,6 @@ class CityscapesDataset(Dataset):
         filenameGt = self.filenamesGt[index]
         with open(filenameGt, 'rb') as f:
             label = parse_label_json(json.load(f))
-
         input_img, label, trans_info = self._transforms(input_img, label, img_path)
         return input_img, label, trans_info
 

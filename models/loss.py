@@ -122,7 +122,7 @@ class ClsFocalLoss(FocalLoss):
 
 
 class AELoss(object):
-    def __init__(self, device, weight=0.1):
+    def __init__(self, device, weight=1):
         self._device = device
         self._weight = weight
 
@@ -143,14 +143,14 @@ class AELoss(object):
             centers, polygons = centers_list[b_i], polygons_list[b_i]
             n = len(centers)
             ae_loss = zero_tensor(self._device)
-            ae_mat = ae[b_i]
+            ae_mat = ae[b_i].cpu()
 
             for c_j in range(n):
                 center = centers[c_j]
                 polygon = polygons[c_j]
 
-                center_tensor = torch.from_numpy(center.astype(np.float32)).to(self._device)
-                polygon_tensor = torch.from_numpy(polygon.astype(np.float32)).to(self._device)
+                center_tensor = torch.from_numpy(center.astype(np.float32))
+                polygon_tensor = torch.from_numpy(polygon.astype(np.float32))
 
                 ae_tensor = torch.stack([ae_mat[:, p[0], p[1]] for p in polygon])
 
