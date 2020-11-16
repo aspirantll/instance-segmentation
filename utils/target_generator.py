@@ -238,4 +238,33 @@ def generate_annotations(targets):
     return annotations
 
 
+def generate_all_annotations(target_size, targets):
+    cls_ids_list, polygons_list = targets
+
+    boxes_list = [[(polygon.min(0)[::-1], polygon.max(0)[::-1]) for polygon in polygons] for polygons in polygons_list]
+
+    b = len(cls_ids_list)
+    max_num = max(len(cls_ids) for cls_ids in cls_ids_list)
+    det_annotations = np.ones((b, max_num, 5), dtype=np.float32) * -1
+
+    for b_i in range(b):
+        cls_ids = cls_ids_list[b_i]
+        boxes = boxes_list[b_i]
+        for o_j in range(len(cls_ids)):
+            det_annotations[b_i, o_j, :2] = boxes[o_j][0]
+            det_annotations[b_i, o_j, 2:4] = boxes[o_j][1]
+            det_annotations[b_i, o_j, 4] = cls_ids[o_j]
+
+    kp_annotations = generate_kp_mask(target_size, polygons_list)
+
+    centers_list = [[(box[0]+box[1])[::-1]/2 for box in boxes] for boxes in boxes_list]
+    repeat_centers = []
+    for b_i in range(b):
+        repeat_centers.append([])
+        for o_j in range(len(polygons_list[b_i])):
+            center = np.array(centers_list[b_i][o_j], dtype=np.float32).reshape(-1, 2)
+            repeat_centers[b_i].append(center.repeat(len(polygons_list[b_i][o_j]), axis=0))
+    ae_annotations = (repeat_centers, polygons_list)
+
+    return det_annotations, kp_annotations, ae_annotations
 

@@ -146,7 +146,7 @@ def is_np(filename):
 
 
 def is_label(filename):
-    return filename.endswith("_polygons.json")
+    return filename.endswith("gtFine_polygons.json")
 
 
 def fill_polygon(polygon):
@@ -161,8 +161,8 @@ def fill_polygon(polygon):
 
 def parse_label_json(label_json):
     # collect the label data
-    polygons = []
     cls_ids = []
+    polygons = []
     for obj in label_json["objects"]:
         # handle category id
         label_name = obj["label"]
