@@ -1,6 +1,6 @@
 data:
   train_dir:  D:\cityscapes
-  save_dir: D:\checkpoints\efficient0
+  save_dir: D:\checkpoints\efficient
   dataset: cityscapes
   batch_size: 1
   input_size: (512, 1024)
@@ -15,7 +15,7 @@ max_iter: -1
 num_epochs: 2000
 save_span: 100
 seed: 1
-compound_coef: 0
+compound_coef: 4
 anchors_scales: '[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]'
 anchors_ratios: '[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]'
 pretrained_path: #D:\checkpoints\efficient0\efficientdet-d0.pth

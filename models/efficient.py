@@ -8,7 +8,8 @@ import numpy as np
 from .efficientnet import EfficientNet as EffNet
 from .efficientnet.utils import MemoryEfficientSwish, Swish
 from .efficientnet.utils_extra import Conv2dStaticSamePadding, MaxPool2dStaticSamePadding
-from .efficientdet.utils import Anchors
+from utils.utils import Anchors
+
 
 class SeparableConvBlock(nn.Module):
     """
@@ -616,7 +617,7 @@ class EfficientSeg(nn.Module):
             1: [320, 112, 40],
             2: [352, 120, 48],
             3: [384, 136, 48],
-            4: [448, 160, 56],
+            4: [448, 160, 56, 32, 24],
             5: [512, 176, 64],
             6: [576, 200, 72],
             7: [576, 200, 72],
