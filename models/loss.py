@@ -326,8 +326,9 @@ class AELoss(object):
                 t_centers = np.vstack(centers).transpose()
                 t_polygons = np.vstack(polygons).transpose()
                 center_tensor = torch.from_numpy(t_centers.astype(np.float32)).to(self._device)
+                polygon_tensor = torch.from_numpy(t_polygons.astype(np.float32)).to(self._device)
                 ae_tensor = ae_mat[:, t_polygons[0, :], t_polygons[1, :]]
-                ae_loss += (ae_tensor - center_tensor).pow(2).sum(dim=0).sqrt().mean()
+                ae_loss += (ae_tensor + polygon_tensor - center_tensor).pow(2).sum(dim=0).sqrt().mean()
 
             ae_losses.append(ae_loss)
 

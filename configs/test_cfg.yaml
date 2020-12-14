@@ -1,5 +1,5 @@
 data:
-  test_dir: D:\cityscapes\leftImg8bit\train
+  test_dir: D:\cityscapes\leftImg8bit\val
   test_image: #E:\checkpoints\erf\
   save_dir: D:\checkpoints\test
   dataset: dir
@@ -8,7 +8,7 @@ data:
   num_classes: 8
 
 seed: 1
-compound_coef: 4
-weights_path: D:\checkpoints\efficient0\efficient_weights_00000061.pth
+compound_coef: 3
+weights_path: D:\checkpoints\efficient\efficient_weights_00000099.pth
 decode_cfg_path: .\configs\decode_cfg.yaml
 trans_cfg_path: .\configs\trans_cfg.json
