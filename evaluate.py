@@ -18,6 +18,8 @@ import os
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
+import moxing as mox
+mox.file.shift('os', 'mox')
 
 import data
 from models import EfficientSeg
@@ -45,6 +47,10 @@ print("loading the arguments...")
 parser = argparse.ArgumentParser(description="test")
 # add arguments
 parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/eval_cfg.yaml", type=str)
+# for modelarts
+parser.add_argument("--data_url", required=False, type=str)
+parser.add_argument("--init_method", required=False, type=str)
+parser.add_argument("--train_url", required=False, type=str)
 # parse args
 args = parser.parse_args()
 

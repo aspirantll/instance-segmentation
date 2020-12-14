@@ -155,7 +155,7 @@ def fill_polygon(polygon):
     box_size = max_point-min_point
     img = np.zeros((box_size[1], box_size[0]), dtype=np.uint8)
     img = cv2.fillPoly(img, [polygon-min_point], 1)
-    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    _, contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     return contours[0].reshape(-1, 2)+min_point
 
 

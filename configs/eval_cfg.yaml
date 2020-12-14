@@ -1,6 +1,6 @@
 data:
-  eval_dir:  D:\cityscapes
-  save_dir: D:\checkpoints\efficient\eval
+  eval_dir:  s3://ll-coco/datasets/cityscapes
+  save_dir: s3://ll-coco/eff/efficient0
   dataset: cityscapes
   batch_size: 2
   input_size: (512, 1024)
@@ -9,8 +9,8 @@ data:
 
 seed: 1
 compound_coef: 4
-weights_path: D:\checkpoints\efficient\efficient_weights_00000100.pth
-weights_dir:  #E:\checkpoints\weights
-decode_cfg_path: .\configs\decode_cfg.yaml
-trans_cfg_path: .\configs\trans_cfg.json
+weights_path: s3://ll-coco/efficient0/efficient_weights_00000231.pth
+weights_dir:
+decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml
+trans_cfg_path: s3://ll-coco/codes/configs/trans_cfg.json
 

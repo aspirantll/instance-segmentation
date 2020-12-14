@@ -132,18 +132,18 @@ def collect_loss(log_dir):
 
 if __name__ == "__main__":
     obsClient = ObsClient(
-        access_key_id='8PCTQLUHQESAUNGGOUZY',
-        secret_access_key='yzTHk0D5TWgiEorKaVrBzuaEjBGDibDj9bjZoNPH',
+        access_key_id='JMG5EEHGZA33U0FCLU8E',
+        secret_access_key='RxfkJEi7HraI3rP5nrFqMRocHrXPwaJfIr0lyhGS',
         server='https://obs.cn-north-4.myhuaweicloud.com'
     )
-    local_dir = r'E:\checkpoints\dla\logs\\'
-    remote_dir = r'dla/txtlogs/'
+    local_dir = r'D:\checkpoints\efficient\logs\\'
+    remote_dir = r'efficient/logs/'
 
     download(obsClient, local_dir, remote_dir, False, False)
 
-    # local_dir = r"C:\data\cityscapes-official\leftImg8bit\val\\"
-    # remote_dir = r"datasets/cityscapes/leftImg8bit/val/"
-    # upload(obsClient, local_dir, remote_dir, False, "")
+    # local_dir = r"D:\cityscapes\gtFine\train\\"
+    # remote_dir = r"datasets/cityscapes/gtFine/train/"
+    # upload(obsClient, local_dir, remote_dir, False, "gtFine_fill_polygons.json")
 
     obsClient.close()
-    collect_loss(local_dir)
+    # collect_loss(local_dir)
