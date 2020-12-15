@@ -469,7 +469,7 @@ def variance_scaling_(tensor, gain=1.):
     return _no_grad_normal_(tensor, 0., std)
 
 
-class non_bottleneck_1d (nn.Module):
+class non_bottleneck_1d(nn.Module):
     def __init__(self, chann, dropprob, dilated):
         super().__init__()
 
@@ -559,7 +559,6 @@ class Decoder (nn.Module):
         return output
 
 
-
 class EfficientSeg(nn.Module):
     def __init__(self, num_classes=80, compound_coef=0, load_weights=False, **kwargs):
         super(EfficientSeg, self).__init__()
@@ -626,6 +625,7 @@ class EfficientSeg(nn.Module):
 
         self.kp_header = Decoder(1, channels[compound_coef])
         self.ae_header = Decoder(2, channels[compound_coef])
+        self.tan_header = Decoder(2, channels[compound_coef])
 
     def freeze_bn(self):
         for m in self.modules():
@@ -644,7 +644,8 @@ class EfficientSeg(nn.Module):
 
         kp_heat = self.kp_header(p5)
         ae_map = self.ae_header(p5)
-        return kp_heat, ae_map, regression, classification, anchors
+        tan_map = self.tan_header(p5)
+        return kp_heat, ae_map, tan_map, regression, classification, anchors
 
     def init_backbone(self, path):
         state_dict = torch.load(path)

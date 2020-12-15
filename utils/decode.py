@@ -304,7 +304,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     # clear the non-active part
     allow_distances = np.vstack(center_whs).max(axis=1) * (0.5 + decode_cfg.wh_delta)
     correspond_index = kp_mask.nonzero()
-    active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t() + correspond_index.float()
+    active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()# + correspond_index.float()
     correspond_vec, corrected_centers = kmeans(active_ae, objs_num, cluster_centers=centers_vector, device=device, allow_distances=allow_distances)
 
     # center pixel locations
