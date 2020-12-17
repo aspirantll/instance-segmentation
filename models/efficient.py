@@ -624,8 +624,8 @@ class EfficientSeg(nn.Module):
         }
 
         self.kp_header = Decoder(1, channels[compound_coef])
-        self.ae_header = Decoder(2, channels[compound_coef])
-        self.tan_header = Decoder(2, channels[compound_coef])
+        self.ae_header = Decoder(4, channels[compound_coef])
+        # self.tan_header = Decoder(2, channels[compound_coef])
 
     def freeze_bn(self):
         for m in self.modules():
@@ -644,8 +644,8 @@ class EfficientSeg(nn.Module):
 
         kp_heat = self.kp_header(p5)
         ae_map = self.ae_header(p5)
-        tan_map = self.tan_header(p5)
-        return kp_heat, ae_map, tan_map, regression, classification, anchors
+        # tan_map = self.tan_header(p5)
+        return kp_heat, ae_map, regression, classification, anchors
 
     def init_backbone(self, path):
         state_dict = torch.load(path)
