@@ -315,24 +315,20 @@ class AELoss(object):
             spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
             sigma = ae[b_i, 2:4]  # n_sigma x h x w
 
-            var_loss = 0
-            instance_loss = 0
+            var_loss = zero_tensor(self._device)
+            instance_loss = zero_tensor(self._device)
 
             for n_i in range(n):
-                center, polygon = centers[n_i][0], polygons[n_i]
-                in_mask = torch.zeros((1, h, w), dtype=torch.float32).to(self._device)
-                in_mask[0, polygon[:, 0], polygon[:, 1]] = 1
-                center = torch.from_numpy(center).view(2, 1, 1).to(self._device)
+                center, polygon = centers[n_i][0].astype(np.int32), polygons[n_i]
+                center = xym_s[:, center[0], center[1]].view(2, 1, 1)
 
                 # calculate sigma
-                sigma_in = sigma[in_mask.expand_as(sigma)==1].view(2, -1)
+                sigma_in = sigma[:, polygon[:, 0], polygon[:, 1]].view(2, -1)
 
                 s = sigma_in.mean(1).view(2, 1, 1)  # n_sigma x 1 x 1
 
                 # calculate var loss before exp
-                var_loss = var_loss + \
-                           torch.mean(
-                               torch.pow(sigma_in - s.detach(), 2)).cpu()
+                var_loss = var_loss + torch.mean(torch.pow(sigma_in - s.detach(), 2))
 
                 s = torch.exp(s * 10)
 
@@ -341,8 +337,9 @@ class AELoss(object):
                     torch.pow(spatial_emb - center, 2) * s, 0, keepdim=True))
 
                 # apply lovasz-hinge loss
-                instance_loss = instance_loss + \
-                                lovasz_hinge(dist * 2 - 1, in_mask)
+                in_mask = torch.zeros((1, h, w), dtype=torch.int8).to(self._device)
+                in_mask[0, polygon[:, 0], polygon[:, 1]] = True
+                instance_loss = instance_loss + lovasz_hinge(dist * 2 - 1, in_mask)
 
             ae_losses.append((var_loss + instance_loss)/max(n, 1))
 
