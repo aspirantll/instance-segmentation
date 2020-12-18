@@ -9,6 +9,6 @@ data:
 
 seed: 1
 compound_coef: 3
-weights_path: D:\checkpoints\efficient\efficient_weights_00000099.pth
+weights_path: D:\checkpoints\efficient\efficient_weights_00000039.pth
 decode_cfg_path: .\configs\decode_cfg.yaml
 trans_cfg_path: .\configs\trans_cfg.json

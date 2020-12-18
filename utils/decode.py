@@ -22,11 +22,16 @@ from torchvision.ops.boxes import batched_nms
 import numpy as np
 from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
-from utils.kmeans import kmeans
 from utils import parell_util
 
 base_dir = r"D:\\checkpoints\\test"
 scale = 1
+
+xm = torch.linspace(0, 2, 2048).view(
+            1, 1, -1).expand(1, 1024, 2048)
+ym = torch.linspace(0, 1, 1024).view(
+            1, -1, 1).expand(1, 1024, 2048)
+xym = torch.cat((xm, ym), 0)
 
 
 def to_numpy(tensor):
@@ -294,6 +299,10 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     if objs_num == 0 or kp_mask.sum() == 0:
         return [], [], [], []
 
+    h, w = hm_kp.shape
+    xym_s = xym[:, 0:h, 0:w].contiguous().to(device)
+    hm_ae[0:2, :, :] = torch.tanh(hm_ae[0:2, :, :]) + xym_s
+
     # generate the centers
     centers_vector = torch.from_numpy(np.vstack(center_indexes)).float()
     if decode_cfg.draw_flag:
@@ -302,8 +311,9 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     # clear the non-active part
     allow_distances = np.vstack(center_whs).max(axis=1) * (0.5 + decode_cfg.wh_delta)
     correspond_index = kp_mask.nonzero()
-    active_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()# + correspond_index.float()
-    correspond_vec, corrected_centers = kmeans(active_ae, objs_num, cluster_centers=centers_vector, device=device, allow_distances=allow_distances)
+    selected_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()
+    active_ae = torch.tanh(selected_ae[:, 0:2])
+    active_sigma = selected_ae[:, 2:4]
 
     # center pixel locations
     n_centers = []
@@ -317,14 +327,18 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         h, w = tuple(center_whs[i] * scale)
         center_loc = center_indexes[i]
 
-        center_loc = transforms.detransform_pixel(center_loc, infos)[0]
-        x, y = center_loc[0], center_loc[1]
+        center_s = xym_s[:, int(center_loc[0]), int(center_loc[1])].view(-1, 2)
 
         # get the points for center
-        kp_pixels = correspond_index[to_numpy((correspond_vec == i).nonzero())[:, 0], :]
+        s = torch.exp(active_sigma * 10)
+        dist = torch.exp(-1 * torch.sum(torch.pow(active_ae - center_s, 2) * s, 1, keepdim=True))
+        kp_pixels = correspond_index[to_numpy((dist >= 0.5).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
         true_pixels = transforms.detransform_pixel(true_pixels, infos)
+
+        center_loc = transforms.detransform_pixel(center_loc, infos)[0]
+        x, y = center_loc[0], center_loc[1]
         # filter the ghost point
         x_mask = (x - (0.5 + decode_cfg.wh_delta) * w < true_pixels[:, 0]) * (true_pixels[:, 0] < x + (0.5 + decode_cfg.wh_delta) * w)
         y_mask = (y - (0.5 + decode_cfg.wh_delta) * h < true_pixels[:, 1]) * (true_pixels[:, 1] < y + (0.5 + decode_cfg.wh_delta) * h)

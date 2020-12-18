@@ -143,6 +143,7 @@ def load_state_dict(model, save_dir, pretrained):
                 best_ap = checkpoint["best_ap"] if "best_ap" in checkpoint else 0
                 return start_epoch + 1, best_ap
         model.init_weight()
+    save_checkpoint(model.state_dict(), 0, 0, data_cfg.save_dir)
     return 0, 0
 
 
