@@ -1,7 +1,7 @@
 data:
   train_dir:  s3://ll-coco/datasets/cityscapes
   val_dir:  s3://ll-coco/datasets/cityscapes
-  save_dir: s3://ll-coco/efficient0
+  save_dir: s3://ll-coco/efficient3
   dataset: cityscapes
   batch_size: 8
   num_classes: -1
@@ -12,13 +12,13 @@ optimizer:
   momentum: 0.9
 
 max_iter: -1
-num_epochs: 500
+num_epochs: 100
 save_span: 1000
 seed: 1
-compound_coef: 0
+compound_coef: 3
 anchors_scales: '[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]'
 anchors_ratios: '[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]'
-pretrained_path: s3://ll-coco/efficient0/efficientdet-d0.pth
+pretrained_path: #s3://ll-coco/efficient0/efficientdet-d0.pth
 decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml
 trans_cfg_path: s3://ll-coco/codes/configs/trans_cfg.json
 start_eval_epoch: 300

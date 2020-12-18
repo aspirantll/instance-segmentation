@@ -137,7 +137,7 @@ if __name__ == "__main__":
         server='https://obs.cn-north-4.myhuaweicloud.com'
     )
     local_dir = r'D:\checkpoints\efficient\logs\\'
-    remote_dir = r'efficient/logs/'
+    remote_dir = r'efficient3/logs/'
 
     download(obsClient, local_dir, remote_dir, False, False)
 
