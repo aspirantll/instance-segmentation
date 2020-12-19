@@ -149,16 +149,6 @@ def is_label(filename):
     return filename.endswith("gtFine_polygons.json")
 
 
-def fill_polygon(polygon):
-    min_point = polygon.min(0)
-    max_point = polygon.max(0)
-    box_size = max_point-min_point
-    img = np.zeros((box_size[1], box_size[0]), dtype=np.uint8)
-    img = cv2.fillPoly(img, [polygon-min_point], 1)
-    _, contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    return contours[0].reshape(-1, 2)+min_point
-
-
 def parse_label_json(label_json):
     # collect the label data
     cls_ids = []
@@ -171,7 +161,7 @@ def parse_label_json(label_json):
         cls_ids.append(name2index[label_name])
         # handle boundary
         polygon = np.array(obj["polygon"], dtype=np.int32)
-        polygons.append(fill_polygon(polygon))
+        polygons.append(polygon)
 
     return cls_ids, polygons
 
