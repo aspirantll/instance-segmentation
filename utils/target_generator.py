@@ -12,6 +12,7 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import numpy as np
+import cv2
 
 
 def gaussian_radius(det_size, min_overlap=0.8):
@@ -238,6 +239,41 @@ def generate_annotations(targets):
     return annotations
 
 
+def dense_sample_polygon(polygons_list):
+    normal_vector_list, n_polygons_list = [], []
+
+    for polygons in polygons_list:
+        normal_vector = []
+        n_polygons = []
+        for polygon in polygons:
+            n_polygon = []
+            normals = []
+            n = polygon.shape[0]
+            for i in range(n):
+                j = (i+1) % n
+                direction = polygon[j]-polygon[i]
+                max_distance = max(abs(direction[0]), abs(direction[1]))
+
+                if max_distance == 0:
+                    continue
+                else:
+                    normal = np.array([-direction[1], direction[0]])
+                    normal = normal / np.clip(np.sqrt(np.sum(normal * normal)), a_min=1e-4, a_max=inf)
+
+                    increase = direction / max_distance
+                    for k in range(int(max_distance)):
+                        n_polygon.append(polygon[i] + increase*k)
+                        normals.append(normal)
+
+            n_polygons.append(np.vstack(n_polygon).astype(np.int32))
+            normal_vector.append(np.vstack(normals).astype(np.float32))
+
+        n_polygons_list.append(n_polygons)
+        normal_vector_list.append(normal_vector)
+
+    return n_polygons_list, normal_vector_list
+
+
 def generate_all_annotations(target_size, targets):
     cls_ids_list, polygons_list = targets
 
@@ -255,16 +291,13 @@ def generate_all_annotations(target_size, targets):
             det_annotations[b_i, o_j, 2:4] = boxes[o_j][1]
             det_annotations[b_i, o_j, 4] = cls_ids[o_j]
 
+    polygons_list, normal_vector_list = dense_sample_polygon(polygons_list)
+
     kp_annotations = generate_kp_mask(target_size, polygons_list)
 
     centers_list = [[(box[0]+box[1])[::-1]/2 for box in boxes] for boxes in boxes_list]
-    repeat_centers = []
-    for b_i in range(b):
-        repeat_centers.append([])
-        for o_j in range(len(polygons_list[b_i])):
-            center = np.array(centers_list[b_i][o_j], dtype=np.float32).reshape(-1, 2)
-            repeat_centers[b_i].append(center.repeat(len(polygons_list[b_i][o_j]), axis=0))
-    ae_annotations = (repeat_centers, polygons_list)
+    ae_annotations = (centers_list, polygons_list)
+    tan_annotations = (polygons_list, normal_vector_list)
 
-    return det_annotations, kp_annotations, ae_annotations
+    return det_annotations, kp_annotations, ae_annotations, tan_annotations
 

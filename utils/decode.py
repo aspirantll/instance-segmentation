@@ -313,7 +313,6 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     correspond_index = kp_mask.nonzero()
     selected_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()
     active_ae = torch.tanh(selected_ae[:, 0:2])
-    active_sigma = selected_ae[:, 2:4]
 
     # center pixel locations
     n_centers = []
@@ -330,7 +329,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         center_s = xym_s[:, int(center_loc[0]), int(center_loc[1])].view(-1, 2)
 
         # get the points for center
-        s = torch.exp(active_sigma * 10)
+        s = torch.exp(hm_ae[2:4, int(center_loc[0]), int(center_loc[1])].view(-1, 2) * 10)
         dist = torch.exp(-1 * torch.sum(torch.pow(active_ae - center_s, 2) * s, 1, keepdim=True))
         kp_pixels = correspond_index[to_numpy((dist >= 0.5).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
