@@ -259,6 +259,8 @@ def dense_sample_polygon(polygons_list):
                 else:
                     normal = np.array([-direction[1], direction[0]])
                     normal = normal / np.clip(np.sqrt(np.sum(normal * normal)), a_min=1e-4, a_max=inf)
+                    if cv2.pointPolygonTest(polygon, tuple((polygon[j]+polygon[i])/2 + normal/abs(normal.max())), False) < 0:
+                        normal = -normal
 
                     increase = direction / max_distance
                     for k in range(int(max_distance)):
