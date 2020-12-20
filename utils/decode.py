@@ -13,7 +13,7 @@ import math
 import os
 from typing import Iterable
 
-from utils.utils import BBoxTransform, ClipBoxes
+from utils.utils import BBoxTransform, ClipBoxes, generate_coordinates
 from utils import image
 import cv2
 import torch
@@ -29,11 +29,7 @@ from utils import parell_util
 base_dir = r"./test"
 scale = 1
 
-xm = torch.linspace(0, 2, 2048).view(
-            1, 1, -1).expand(1, 1024, 2048)
-ym = torch.linspace(0, 1, 1024).view(
-            1, -1, 1).expand(1, 1024, 2048)
-xym = torch.cat((xm, ym), 0)
+xym = generate_coordinates()
 
 
 def to_numpy(tensor):
@@ -306,12 +302,10 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     hm_ae[0:2, :, :] = torch.tanh(hm_ae[0:2, :, :]) + xym_s
 
     # generate the centers
-    centers_vector = torch.from_numpy(np.vstack(center_indexes)).float()
     if decode_cfg.draw_flag:
         draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, infos, "bound")
 
     # clear the non-active part
-    allow_distances = np.vstack(center_whs).max(axis=1) * (0.5 + decode_cfg.wh_delta)
     correspond_index = kp_mask.nonzero()
     selected_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()
     active_ae = torch.tanh(selected_ae[:, 0:2])
@@ -331,9 +325,10 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         center_s = xym_s[:, int(center_loc[0]), int(center_loc[1])].view(-1, 2)
 
         # get the points for center
-        s = torch.exp(hm_ae[2:4, int(center_loc[0]), int(center_loc[1])].view(-1, 2) * 10)
+        sigma = hm_ae[2:4, int(center_loc[0]), int(center_loc[1])].view(-1, 2)
+        s = torch.exp(sigma * 10)
         dist = torch.exp(-1 * torch.sum(torch.pow(active_ae - center_s, 2) * s, 1, keepdim=True))
-        kp_pixels = correspond_index[to_numpy((dist >= 0.5).nonzero())[:, 0], :]
+        kp_pixels = correspond_index[to_numpy((dist >= 0.6).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
         true_pixels = transforms.detransform_pixel(true_pixels, infos)
@@ -445,10 +440,10 @@ def decode_output(inputs, outs, infos, transforms, decode_cfg, device):
     :return:
     """
     # get output
-    kp_heat, ae_map, regression, classification, anchors = outs
+    kp_out, regression, classification, anchors = outs
     det_boxes = decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
 
-    dets = parell_util.multi_apply(decode_single, kp_heat, ae_map, det_boxes, infos, transforms=transforms
+    dets = parell_util.multi_apply(decode_single, kp_out[:, 0:1, :, :], kp_out[:, 1:5, :, :], det_boxes, infos, transforms=transforms
                                    , decode_cfg=decode_cfg, device=device)
 
     return dets[0]

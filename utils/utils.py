@@ -448,3 +448,11 @@ class Anchors(nn.Module):
         # save it for later use to reduce overhead
         self.last_anchors[image.device] = anchor_boxes
         return anchor_boxes
+
+
+def generate_coordinates():
+    xm = torch.linspace(0, 256, 2048).view(
+        1, 1, -1).expand(1, 1024, 2048)
+    ym = torch.linspace(0, 128, 1024).view(
+        1, -1, 1).expand(1, 1024, 2048)
+    return torch.cat((xm, ym), 0)
