@@ -281,14 +281,15 @@ class KPFocalLoss(FocalLoss):
         return super().__call__(hm_kp, kp_mask)
 
 
-def generate_center_radius_indexes(point, radius, max_x, max_y):
+def generate_center_radius_indexes(point, radius, polygon):
     indexes_list = []
+
     delta = radius//2
     for i in range(-delta, delta):
         for j in range(-delta, delta):
             x = int(point[0])+i
-            y = int(point[0])+j
-            if 0 <= x < max_x and 0 <= y < max_y:
+            y = int(point[1])+j
+            if cv2.pointPolygonTest(polygon, (x, y), False) > 0:
                 indexes_list.append([x, y])
     return np.array(indexes_list)
 
@@ -333,7 +334,7 @@ class AELoss(object):
             for n_i in range(n):
                 center, polygon = centers[n_i].astype(np.int32), polygons[n_i]
                 # calculate sigma
-                center_radius = generate_center_radius_indexes(center, 10, h, w)
+                center_radius = generate_center_radius_indexes(center, 10, polygon)
                 sigma_in = sigma[:, np.vstack((polygon[:, 0:1], center_radius[:, 0:1])), np.vstack((polygon[:, 1:], center_radius[:, 1:]))].view(2, -1)
 
                 s = sigma_in.mean(1).view(2, 1, 1)  # n_sigma x 1 x 1
