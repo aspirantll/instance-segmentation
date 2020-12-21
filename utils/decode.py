@@ -306,7 +306,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     # clear the non-active part
     correspond_index = kp_mask.nonzero()
     selected_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()
-    active_ae = torch.tanh(selected_ae[:, 0:2])
+    active_ae = selected_ae[:, 0:2]
 
     # center pixel locations
     n_centers = []
