@@ -202,7 +202,7 @@ def sigmoid_(tensor):
     return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1-1e-4)
 
 
-def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum"):
+def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum", sigmoid=True):
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
     Args:
@@ -222,7 +222,10 @@ def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum"):
     Returns:
         Loss tensor with the reduction option applied.
     """
-    pred = sigmoid_(inputs)
+    if sigmoid:
+        pred = sigmoid_(inputs)
+    else:
+        pred = inputs
     pt = pred * targets + (1 - pred) * (1 - targets)
     log_pt = torch.log(pt)
     loss_mat = - torch.pow(1 - pt, gamma) * log_pt
@@ -293,9 +296,12 @@ def generate_center_radius_indexes(point, radius, max_x, max_y):
 
 
 class AELoss(object):
-    def __init__(self, device, weight=1):
+    def __init__(self, device, weight=1, alpha=2, beta=4, epsilon=-1):
         self._device = device
         self._weight = weight
+        self._alpha = alpha
+        self._beta = beta
+        self._epsilon = epsilon
         self._xym = generate_coordinates().to(device)
 
     def __call__(self, ae, targets):
@@ -343,10 +349,12 @@ class AELoss(object):
                 dist = torch.exp(-1 * torch.sum(
                     torch.pow(spatial_emb - center_s, 2) * s, 0, keepdim=True))
 
-                # apply lovasz-hinge loss
-                in_mask = torch.zeros((1, h, w), dtype=torch.int8).to(self._device)
-                in_mask[0, polygon[:, 0], polygon[:, 1]] = True
-                instance_loss = instance_loss + lovasz_hinge(dist * 2 - 1, in_mask)
+                # apply focal loss
+                pos_mask = torch.zeros((1, h, w), dtype=torch.float32).to(self._device)
+                pos_mask[0, polygon[:, 0], polygon[:, 1]] = 1
+                pos_loss, neg_loss = sigmoid_focal_loss(dist, pos_mask, self._epsilon, self._alpha, reduction="None", sigmoid=False)
+                # weight the negative loss
+                instance_loss = instance_loss + pos_loss.sum() + neg_loss.sum()
 
             ae_losses.append((var_loss + instance_loss)/max(n, 1))
 

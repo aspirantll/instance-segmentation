@@ -326,7 +326,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         sigma = hm_ae[2:4, int(center_loc[0]), int(center_loc[1])].view(-1, 2)
         s = torch.exp(sigma * 10)
         dist = torch.exp(-1 * torch.sum(torch.pow(active_ae - center_s, 2) * s, 1, keepdim=True))
-        kp_pixels = correspond_index[to_numpy((dist >= 0.6).nonzero())[:, 0], :]
+        kp_pixels = correspond_index[to_numpy((dist < 0.5).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
         true_pixels = transforms.detransform_pixel(true_pixels, infos)
