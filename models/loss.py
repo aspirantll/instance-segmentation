@@ -331,7 +331,7 @@ class AELoss(object):
             for n_i in range(n):
                 center, polygon = centers[n_i].astype(np.int32), polygons[n_i]
 
-                in_mask = cv2.fillPoly(np.zeros((h, w), dtype=np.uint8), [polygon[:, ::-1]], 1)
+                in_mask = cv2.fillPoly(np.zeros((h, w), dtype=np.uint8), [polygon[:, ::-1]], 1).astype(np.bool)
                 in_mask = torch.from_numpy(in_mask).view(1, h, w).to(self._device)
 
                 # calculate sigma
@@ -353,7 +353,7 @@ class AELoss(object):
 
                 # apply lovasz-hinge loss
                 instance_loss = instance_loss + \
-                                lovasz_hinge(dist * 2 - 1, in_mask)
+                                lovasz_hinge(dist * 2 - 1, in_mask.float())
 
             ae_losses.append((var_loss + instance_loss)/max(n, 1))
 
