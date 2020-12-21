@@ -314,7 +314,6 @@ class AELoss(object):
         xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
 
         ae_losses = []
-        update_loss_normalizer = zero_tensor(self._device)
         for b_i in range(b):
             centers = centers_list[b_i]
             polygons = polygons_list[b_i]
@@ -332,10 +331,7 @@ class AELoss(object):
             for n_i in range(n):
                 center, polygon = centers[n_i].astype(np.int32), polygons[n_i]
 
-                in_mask = np.zeros((h, w), dtype=np.uint8)
-                in_mask = cv2.fillPoly(in_mask, [polygon], 1)
-                if in_mask.sum() == 0:
-                    in_mask[polygon[:, 0], polygon[:, 1]] = 1
+                in_mask = cv2.fillPoly(np.zeros((h, w), dtype=np.uint8), [polygon[:, ::-1]], 1)
                 in_mask = torch.from_numpy(in_mask).view(1, h, w).to(self._device)
 
                 # calculate sigma
