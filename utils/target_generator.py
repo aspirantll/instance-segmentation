@@ -276,6 +276,17 @@ def dense_sample_polygon(polygons_list):
     return n_polygons_list, normal_vector_list
 
 
+def generate_instance_ids(polygons_list, h, w):
+    instance_img_list = []
+    for polygons in polygons_list:
+        instance_img = np.zeros((h, w), dtype=np.int) - 1
+        for it, polygon in enumerate(polygons):
+            instance_mask = cv2.fillPoly(np.zeros((h, w), dtype=np.uint8), [polygon[:, ::-1]], 1)
+            instance_img = instance_img*(1-instance_mask) + instance_mask*it
+        instance_img_list.append(instance_img)
+    return instance_img_list
+
+
 def generate_all_annotations(target_size, targets):
     cls_ids_list, polygons_list = targets
 
@@ -293,13 +304,13 @@ def generate_all_annotations(target_size, targets):
             det_annotations[b_i, o_j, 2:4] = boxes[o_j][1]
             det_annotations[b_i, o_j, 4] = cls_ids[o_j]
 
-    polygons_list, normal_vector_list = dense_sample_polygon(polygons_list)
+    dense_polygons_list, normal_vector_list = dense_sample_polygon(polygons_list)
 
-    kp_annotations = generate_kp_mask(target_size, polygons_list)
+    kp_annotations = generate_kp_mask(target_size, dense_polygons_list)
 
     centers_list = [[(box[0]+box[1])[::-1]/2 for box in boxes] for boxes in boxes_list]
     ae_annotations = (centers_list, polygons_list)
-    tan_annotations = (polygons_list, normal_vector_list)
+    tan_annotations = (dense_polygons_list, normal_vector_list)
 
     return det_annotations, kp_annotations, ae_annotations, tan_annotations
 
