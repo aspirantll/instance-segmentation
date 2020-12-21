@@ -302,6 +302,8 @@ class AELoss(object):
         self._alpha = alpha
         self._beta = beta
         self._epsilon = epsilon
+        self.loss_normalizer = 100
+        self.loss_normalizer_momentum = 0.9
         self._xym = generate_coordinates().to(device)
 
     def __call__(self, ae, targets):
@@ -317,6 +319,7 @@ class AELoss(object):
         xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
 
         ae_losses = []
+        update_loss_normalizer = zero_tensor(self._device)
         for b_i in range(b):
             centers = centers_list[b_i]
             polygons = polygons_list[b_i]
@@ -331,6 +334,7 @@ class AELoss(object):
             var_loss = zero_tensor(self._device)
             instance_loss = zero_tensor(self._device)
 
+            loss_normalizer_mean = zero_tensor(self._device)
             for n_i in range(n):
                 center, polygon = centers[n_i].astype(np.int32), polygons[n_i]
                 # calculate sigma
@@ -353,11 +357,21 @@ class AELoss(object):
                 pos_mask = torch.zeros((1, h, w), dtype=torch.float32).to(self._device)
                 pos_mask[0, polygon[:, 0], polygon[:, 1]] = 1
                 pos_loss, neg_loss = sigmoid_focal_loss(dist, pos_mask, self._epsilon, self._alpha, reduction="None", sigmoid=False)
-                # weight the negative loss
-                instance_loss = instance_loss + pos_loss.sum() + neg_loss.sum()
 
+                num_pos = pos_mask.sum()
+                loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + \
+                                  (1 - self.loss_normalizer_momentum) * num_pos
+
+                pos_loss = pos_loss.sum() / torch.clamp_min(loss_normalizer, 1)
+                neg_loss = neg_loss.sum() / torch.clamp_min(loss_normalizer, 1)
+                instance_loss = instance_loss + pos_loss + neg_loss
+                loss_normalizer_mean += loss_normalizer
             ae_losses.append((var_loss + instance_loss)/max(n, 1))
-
+            if n > 0:
+                update_loss_normalizer += loss_normalizer_mean/n
+            else:
+                update_loss_normalizer = self.loss_normalizer
+        self.loss_normalizer = update_loss_normalizer/b
         # compute mean loss
         ae_loss = torch.stack(ae_losses).mean()
         return self._weight * ae_loss
