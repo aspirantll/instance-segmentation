@@ -296,14 +296,9 @@ def generate_center_radius_indexes(point, radius, max_x, max_y):
 
 
 class AELoss(object):
-    def __init__(self, device, weight=1, alpha=2, beta=4, epsilon=-1):
+    def __init__(self, device, weight=1):
         self._device = device
         self._weight = weight
-        self._alpha = alpha
-        self._beta = beta
-        self._epsilon = epsilon
-        self.loss_normalizer = 100
-        self.loss_normalizer_momentum = 0.9
         self._xym = generate_coordinates().to(device)
 
     def __call__(self, ae, targets):
@@ -334,17 +329,24 @@ class AELoss(object):
             var_loss = zero_tensor(self._device)
             instance_loss = zero_tensor(self._device)
 
-            loss_normalizer_mean = zero_tensor(self._device)
             for n_i in range(n):
                 center, polygon = centers[n_i].astype(np.int32), polygons[n_i]
+
+                in_mask = np.zeros((h, w), dtype=np.uint8)
+                in_mask = cv2.fillPoly(in_mask, [polygon], 1)
+                if in_mask.sum() == 0:
+                    in_mask[polygon[:, 0], polygon[:, 1]] = 1
+                in_mask = torch.from_numpy(in_mask).view(1, h, w).to(self._device)
+
                 # calculate sigma
-                center_radius = generate_center_radius_indexes(center, 4, h, w)
-                sigma_in = sigma[:, np.vstack((polygon[:, 0:1], center_radius[:, 0:1])), np.vstack((polygon[:, 1:], center_radius[:, 1:]))].view(2, -1)
+                sigma_in = sigma[in_mask.expand_as(sigma)].view(2, -1)
 
                 s = sigma_in.mean(1).view(2, 1, 1)  # n_sigma x 1 x 1
 
                 # calculate var loss before exp
-                var_loss = var_loss + torch.mean(torch.pow(sigma_in - s.detach(), 2))
+                var_loss = var_loss + \
+                           torch.mean(
+                               torch.pow(sigma_in - s.detach(), 2))
 
                 s = torch.exp(s * 10)
 
@@ -353,25 +355,12 @@ class AELoss(object):
                 dist = torch.exp(-1 * torch.sum(
                     torch.pow(spatial_emb - center_s, 2) * s, 0, keepdim=True))
 
-                # apply focal loss
-                pos_mask = torch.zeros((1, h, w), dtype=torch.float32).to(self._device)
-                pos_mask[0, polygon[:, 0], polygon[:, 1]] = 1
-                pos_loss, neg_loss = sigmoid_focal_loss(dist, pos_mask, self._epsilon, self._alpha, reduction="None", sigmoid=False)
+                # apply lovasz-hinge loss
+                instance_loss = instance_loss + \
+                                lovasz_hinge(dist * 2 - 1, in_mask)
 
-                num_pos = pos_mask.sum()
-                loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + \
-                                  (1 - self.loss_normalizer_momentum) * num_pos
-
-                pos_loss = pos_loss.sum() / torch.clamp_min(loss_normalizer, 1)
-                neg_loss = neg_loss.sum() / torch.clamp_min(loss_normalizer, 1)
-                instance_loss = instance_loss + pos_loss + neg_loss
-                loss_normalizer_mean += loss_normalizer
             ae_losses.append((var_loss + instance_loss)/max(n, 1))
-            if n > 0:
-                update_loss_normalizer += loss_normalizer_mean/n
-            else:
-                update_loss_normalizer = self.loss_normalizer
-        self.loss_normalizer = update_loss_normalizer/b
+
         # compute mean loss
         ae_loss = torch.stack(ae_losses).mean()
         return self._weight * ae_loss
