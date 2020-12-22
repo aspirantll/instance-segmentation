@@ -1,11 +1,11 @@
 __copyright__ = \
-"""
-Copyright &copyright © (c) 2020 The Board of xx University.
-All rights reserved.
-
-This software is covered by China patents and copyright.
-This source code is to be used for academic research purposes only, and no commercial use is allowed.
-"""
+    """
+    Copyright &copyright © (c) 2020 The Board of xx University.
+    All rights reserved.
+    
+    This software is covered by China patents and copyright.
+    This source code is to be used for academic research purposes only, and no commercial use is allowed.
+    """
 __authors__ = ""
 __version__ = "1.0.0"
 
@@ -13,10 +13,10 @@ import cv2
 import torch
 import torch.nn as nn
 import numpy as np
-from .lovasz_losses import lovasz_hinge
 
-from utils.target_generator import generate_all_annotations
+from utils.target_generator import generate_all_annotations, generate_kp_mask
 from utils.utils import BBoxTransform, ClipBoxes, postprocess, display, generate_coordinates
+
 
 def calc_iou(a, b):
     # a(anchor) [boxes, (y1, x1, y2, x2)]
@@ -199,7 +199,7 @@ def zero_tensor(device):
 
 
 def sigmoid_(tensor):
-    return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1-1e-4)
+    return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1 - 1e-4)
 
 
 def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum", sigmoid=True):
@@ -231,10 +231,10 @@ def sigmoid_focal_loss(inputs, targets, alpha, gamma, reduction="sum", sigmoid=T
     loss_mat = - torch.pow(1 - pt, gamma) * log_pt
 
     if alpha >= 0:
-        loss_mat = alpha * loss_mat * targets + (1 - alpha) * (1-targets) * loss_mat
+        loss_mat = alpha * loss_mat * targets + (1 - alpha) * (1 - targets) * loss_mat
 
     pos_loss = loss_mat * targets
-    neg_loss = loss_mat * (1-targets)
+    neg_loss = loss_mat * (1 - targets)
     if reduction == "mean":
         pos_loss = pos_loss.mean()
         neg_loss = neg_loss.mean()
@@ -269,7 +269,7 @@ class FocalLoss(object):
         pos_loss = pos_loss.sum((1, 2, 3)) / torch.clamp_min(loss_normalizer, 1)
         neg_loss = neg_loss.sum((1, 2, 3)) / torch.clamp_min(loss_normalizer, 1)
 
-        return pos_loss.mean()+neg_loss.mean()
+        return pos_loss.mean() + neg_loss.mean()
 
 
 class KPFocalLoss(FocalLoss):
@@ -285,14 +285,46 @@ class KPFocalLoss(FocalLoss):
 
 def generate_center_radius_indexes(point, radius, max_x, max_y):
     indexes_list = []
-    delta = radius//2
+    delta = radius // 2
     for i in range(-delta, delta):
         for j in range(-delta, delta):
-            x = int(point[0])+i
-            y = int(point[1])+j
+            x = int(point[0]) + i
+            y = int(point[1]) + j
             if 0 <= x < max_x and 0 <= y < max_y:
                 indexes_list.append([x, y])
     return np.array(indexes_list)
+
+
+def focal_loss(pred, gt):
+    ''' Modified focal loss. Exactly the same as CornerNet.
+        Runs faster and costs a little bit more memory
+      Arguments:
+        pred (batch x c x h x w)
+        gt_regr (batch x c x h x w)
+    '''
+    pred = torch.clamp(pred, min=1e-4, max=1 - 1e-4)
+    pos_inds = gt.eq(1).float()
+    neg_inds = gt.lt(1).float()
+
+    neg_weights = torch.pow(1 - gt, 4)
+
+    loss = 0
+
+    pos_loss = torch.log(pred) * torch.pow(1 - pred, 2) * pos_inds
+    neg_loss = torch.log(1 - pred) * torch.pow(pred, 2) * neg_weights * neg_inds
+
+    num_pos = pos_inds.float().sum()
+    pos_loss = pos_loss.sum()
+    neg_loss = neg_loss.sum()
+
+    if num_pos == 0:
+        loss = loss - neg_loss
+    else:
+        loss = loss - (pos_loss + neg_loss) / num_pos
+
+    if torch.isnan(loss):
+        print("nan")
+    return loss
 
 
 class AELoss(object):
@@ -319,7 +351,7 @@ class AELoss(object):
             polygons = polygons_list[b_i]
             n = len(centers)
 
-            if n < 0:
+            if n <= 0:
                 continue
 
             spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
@@ -328,34 +360,28 @@ class AELoss(object):
             var_loss = zero_tensor(self._device)
             instance_loss = zero_tensor(self._device)
 
+            centers_np = np.vstack(centers)
+            centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].unsqueeze(1)
+
             for n_i in range(n):
-                center, polygon = centers[n_i].astype(np.int32), polygons[n_i]
-
-                in_mask = cv2.fillPoly(np.zeros((h, w), dtype=np.uint8), [polygon[:, ::-1]], 1).astype(np.bool)
-                in_mask = torch.from_numpy(in_mask).view(1, h, w).to(self._device)
-
-                # calculate sigma
-                sigma_in = sigma[in_mask.expand_as(sigma)].view(2, -1)
-
-                s = sigma_in.mean(1).view(2, 1, 1)  # n_sigma x 1 x 1
-
-                # calculate var loss before exp
-                var_loss = var_loss + \
-                           torch.mean(
-                               torch.pow(sigma_in - s.detach(), 2))
-
-                s = torch.exp(s * 10)
+                center, kps = centers[n_i].astype(np.int32), polygons[n_i]
 
                 # calculate gaussian
                 center_s = xym_s[:, center[0], center[1]].view(2, 1, 1)
-                dist = torch.exp(-1 * torch.sum(
-                    torch.pow(spatial_emb - center_s, 2) * s, 0, keepdim=True))
+                pred = torch.exp(-1 * torch.sum(
+                    torch.pow(spatial_emb - center_s, 2) * sigma, 0, keepdim=True))
 
-                # apply lovasz-hinge loss
-                instance_loss = instance_loss + \
-                                lovasz_hinge(dist * 2 - 1, in_mask.float())
+                mask = torch.from_numpy(generate_kp_mask(kps, (h, w))).view(1, h, w).to(self._device)
+                instance_loss += focal_loss(pred, mask)
 
-            ae_losses.append((var_loss + instance_loss)/max(n, 1))
+                # calculate the delta distance
+                selected_emb = spatial_emb[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
+                selected_sigma = sigma[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
+                dists = torch.exp(-1 * torch.sum(
+                    torch.pow(selected_emb - centers_tensor, 2) * selected_sigma, 0))  # m x n
+                var_loss += nn.functional.l1_loss(dists[:, n_i], torch.min(dists, dim=1)[0], size_average=False)
+
+            ae_losses.append((var_loss + instance_loss) / max(n, 1))
 
         # compute mean loss
         ae_loss = torch.stack(ae_losses).mean()
@@ -386,8 +412,8 @@ class TangentLoss(object):
                 normal_tensor = torch.from_numpy(t_normals).to(self._device)
 
                 tan_tensor = tan_mat[:, t_polygons[0, :], t_polygons[1, :]]
-                tan_tensor = tan_tensor/torch.clamp((tan_tensor*tan_tensor).sum(dim=0).sqrt(), min=1e-4)
-                tan_loss += (1 - (normal_tensor*tan_tensor).sum(dim=0)).mean()
+                tan_tensor = tan_tensor / torch.clamp((tan_tensor * tan_tensor).sum(dim=0).sqrt(), min=1e-4)
+                tan_loss += (1 - (normal_tensor * tan_tensor).sum(dim=0)).mean()
 
             tan_losses.append(tan_loss)
 
@@ -409,10 +435,12 @@ class ComposeLoss(nn.Module):
     def forward(self, outputs, targets):
         # unpack the output
         kp_out, regression, classification, anchors = outputs
-        det_annotations, kp_annotations, ae_annotations, tan_annotations = generate_all_annotations(kp_out.shape, targets)
+        det_annotations, kp_annotations, ae_annotations, tan_annotations = generate_all_annotations(kp_out.shape,
+                                                                                                    targets)
 
         losses = []
-        losses.extend(self.det_focal_loss(classification, regression, anchors, torch.from_numpy(det_annotations).to(self._device)))
+        losses.extend(self.det_focal_loss(classification, regression, anchors,
+                                          torch.from_numpy(det_annotations).to(self._device)))
         losses.append(self.kp_loss(kp_out[:, 0:1, :, :], kp_annotations))
         losses.append(self.ae_loss(kp_out[:, 1:5, :, :], ae_annotations))
         losses.append(self.tan_loss(kp_out[:, 5:7, :, :], tan_annotations))
@@ -425,6 +453,3 @@ class ComposeLoss(nn.Module):
 
     def get_loss_states(self):
         return self._loss_names
-
-
-

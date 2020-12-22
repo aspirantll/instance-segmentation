@@ -20,13 +20,11 @@ import torch
 import torch.nn as nn
 from torchvision.ops.boxes import batched_nms
 import numpy as np
-import moxing as mox
-
 from utils.visualize import visualize_kp, visualize_box
 from utils.nms import py_cpu_nms
 from utils import parell_util
 
-base_dir = r"./test"
+base_dir = r""
 scale = 1
 
 xym = generate_coordinates()
@@ -202,7 +200,7 @@ def aug_group(pts, center_loc):
 
 
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
-    cv2.imwrite(r'{}\mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
+    cv2.imwrite(r'{}/mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
     kp_arr = to_numpy(kp_mask.nonzero())
     img = cv2.imread(infos.img_path)
     draw_kp(img, kp_arr, transforms, kp_threshold, infos, keyword)
@@ -216,7 +214,7 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
         # put to groups
         img = visualize_kp(img, true_pixel)
     cv2.imwrite(
-        r'{}\{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
+        r'{}/{}_{}{}.png'.format(base_dir, os.path.basename(infos.img_path), keyword, kp_threshold),
         img)
     return img
 
@@ -228,7 +226,7 @@ def draw_box(box_sizes, centers, trans_info, transforms):
     img = cv2.imread(trans_info.img_path)
     img = visualize_box(img, centers, box_sizes, mask=True)
     cv2.imwrite(
-        r'{}\{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
+        r'{}/{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
         img)
 
 
@@ -357,7 +355,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
             n_confs.append(center_confs[i])
     if decode_cfg.draw_flag:
         cv2.imwrite(
-            r'{}\{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
+            r'{}/{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
             img)
     return n_clss, n_confs, n_centers, kps
 

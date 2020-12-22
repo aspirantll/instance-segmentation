@@ -52,6 +52,8 @@ data_cfg = cfg.data
 decode_cfg = Config(cfg.decode_cfg_path)
 trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
+decode.base_dir = data_cfg.save_dir
+
 if 'resize' in trans_cfg.get('val_trans', 'trans_seq'):
     decode.scale = trans_cfg.get('val_trans', 'resize')['scale']
 
