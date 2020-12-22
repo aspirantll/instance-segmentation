@@ -323,7 +323,7 @@ def focal_loss(pred, gt):
         loss = loss - (pos_loss + neg_loss) / num_pos
 
     if torch.isnan(loss):
-        print("nan")
+        raise RuntimeError("loss nan")
     return loss
 
 
@@ -345,7 +345,7 @@ class AELoss(object):
 
         xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
 
-        ae_losses = []
+        ae_loss = zero_tensor(self._device)
         for b_i in range(b):
             centers = centers_list[b_i]
             polygons = polygons_list[b_i]
@@ -381,11 +381,10 @@ class AELoss(object):
                     torch.pow(selected_emb - centers_tensor, 2) * selected_sigma, 0))  # m x n
                 var_loss += nn.functional.l1_loss(dists[:, n_i], torch.min(dists, dim=1)[0], size_average=False)
 
-            ae_losses.append((var_loss + instance_loss) / max(n, 1))
+            ae_loss += (var_loss + instance_loss) / max(n, 1)
 
         # compute mean loss
-        ae_loss = torch.stack(ae_losses).mean()
-        return self._weight * ae_loss
+        return self._weight * ae_loss / b
 
 
 class TangentLoss(object):
