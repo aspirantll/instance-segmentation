@@ -652,7 +652,7 @@ class EfficientSeg(nn.Module):
             print('Ignoring ' + str(e) + '"')
 
     def init_weight(self):
-        for name, module in self.named_modules():
+        for name, module in self.kp_header.named_modules():
             is_conv_layer = isinstance(module, nn.Conv2d)
 
             if is_conv_layer:

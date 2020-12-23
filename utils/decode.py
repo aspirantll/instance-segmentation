@@ -13,6 +13,7 @@ import math
 import os
 from typing import Iterable
 
+from utils.kmeans import kmeans
 from utils.utils import BBoxTransform, ClipBoxes, generate_coordinates
 from utils import image
 import cv2
@@ -306,7 +307,13 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     # clear the non-active part
     correspond_index = kp_mask.nonzero()
     selected_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()
-    active_ae = selected_ae[:, 0:2]
+    active_ae = selected_ae[:, 0:2].unsqueeze(1)
+    active_sigma = selected_ae[:, 2:4].unsqueeze(1)
+    centers_np = np.vstack(center_indexes)
+    centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].t().unsqueeze(0)
+    dists = torch.exp(-1 * torch.sum(
+        torch.pow(active_ae - centers_tensor, 2) * active_sigma, 2))
+    scores, correspond_vec = dists.max(1)
 
     # center pixel locations
     n_centers = []
@@ -318,19 +325,14 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     for i in range(objs_num):
         # filter the boxes
         h, w = tuple(center_whs[i] * scale)
-        center_loc = center_indexes[i]
-
-        center_s = xym_s[:, int(center_loc[0]), int(center_loc[1])].view(-1, 2)
 
         # get the points for center
-        sigma = hm_ae[2:4, int(center_loc[0]), int(center_loc[1])].view(-1, 2)
-        s = torch.exp(sigma * 10)
-        dist = torch.exp(-1 * torch.sum(torch.pow(active_ae - center_s, 2) * s, 1, keepdim=True))
-        kp_pixels = correspond_index[to_numpy((dist < 0.5).nonzero())[:, 0], :]
+        kp_pixels = correspond_index[to_numpy((correspond_vec == i).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
         true_pixels = transforms.detransform_pixel(true_pixels, infos)
 
+        center_loc = center_indexes[i]
         center_loc = transforms.detransform_pixel(center_loc, infos)[0]
         x, y = center_loc[0], center_loc[1]
         # filter the ghost point
