@@ -358,7 +358,6 @@ class AELoss(object):
             sigma = ae[b_i, 2:4]  # n_sigma x h x w
 
             var_loss = zero_tensor(self._device)
-            instance_loss = zero_tensor(self._device)
 
             centers_np = np.vstack(centers)
             centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].unsqueeze(1)
@@ -366,22 +365,14 @@ class AELoss(object):
             for n_i in range(n):
                 center, kps = centers[n_i].astype(np.int32), polygons[n_i]
 
-                # calculate gaussian
-                center_s = xym_s[:, center[0], center[1]].view(2, 1, 1)
-                pred = torch.exp(-1 * torch.sum(
-                    torch.pow(spatial_emb - center_s, 2) * sigma, 0, keepdim=True))
-
-                mask = torch.from_numpy(generate_kp_mask(kps, (h, w))).view(1, h, w).to(self._device)
-                instance_loss += focal_loss(pred, mask)
-
                 # calculate the delta distance
                 selected_emb = spatial_emb[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
                 selected_sigma = sigma[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
                 dists = torch.exp(-1 * torch.sum(
                     torch.pow(selected_emb - centers_tensor, 2) * selected_sigma, 0))  # m x n
-                var_loss += nn.functional.l1_loss(dists[:, n_i], torch.min(dists, dim=1)[0], size_average=False)
+                var_loss += nn.functional.l1_loss(dists[:, n_i], torch.max(dists, dim=1)[0], size_average=False)
 
-            ae_loss += (var_loss + instance_loss) / max(n, 1)
+            ae_loss += var_loss / max(n, 1)
 
         # compute mean loss
         return self._weight * ae_loss / b
