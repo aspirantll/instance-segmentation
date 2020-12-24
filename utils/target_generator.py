@@ -232,7 +232,7 @@ def generate_annotations(targets):
     return annotations
 
 
-def dense_sample_polygon(polygons_list):
+def dense_sample_polygon(polygons_list, h, w):
     normal_vector_list, n_polygons_list = [], []
 
     for polygons in polygons_list:
@@ -257,8 +257,10 @@ def dense_sample_polygon(polygons_list):
 
                     increase = direction / max_distance
                     for k in range(int(max_distance)):
-                        n_polygon.append(polygon[i] + increase*k)
-                        normals.append(normal)
+                        point = polygon[i] + increase*k
+                        if 0 < point[0] < h-1 and 0 < point[1] < w-1:
+                            n_polygon.append(point)
+                            normals.append(normal)
 
             n_polygons.append(np.vstack(n_polygon).astype(np.int32))
             normal_vector.append(np.vstack(normals).astype(np.float32))
@@ -292,7 +294,7 @@ def generate_all_annotations(target_size, targets):
 
     boxes_list = [[(polygon.min(0)[::-1], polygon.max(0)[::-1]) for polygon in polygons] for polygons in polygons_list]
 
-    b = len(cls_ids_list)
+    b, c, h, w = target_size
     max_num = max(len(cls_ids) for cls_ids in cls_ids_list)
     det_annotations = np.ones((b, max_num, 5), dtype=np.float32) * -1
 
@@ -304,7 +306,7 @@ def generate_all_annotations(target_size, targets):
             det_annotations[b_i, o_j, 2:4] = boxes[o_j][1]
             det_annotations[b_i, o_j, 4] = cls_ids[o_j]
 
-    dense_polygons_list, normal_vector_list = dense_sample_polygon(polygons_list)
+    dense_polygons_list, normal_vector_list = dense_sample_polygon(polygons_list, h, w)
 
     instance_mask = generate_instance_mask(target_size, dense_polygons_list)
     kp_annotations = (instance_mask >= 0).astype(np.float32)
