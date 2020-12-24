@@ -341,11 +341,12 @@ class AELoss(object):
         """
         # prepare step
         b, c, h, w = ae.shape
-        centers_list, polygons_list = targets
+        centers_list, polygons_list, kp_annotations = targets
 
         xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
 
         ae_loss = zero_tensor(self._device)
+        kp_mask = torch.from_numpy(kp_annotations).to(self._device)
         for b_i in range(b):
             centers = centers_list[b_i]
             polygons = polygons_list[b_i]
@@ -358,21 +359,16 @@ class AELoss(object):
             sigma = ae[b_i, 2:4]  # n_sigma x h x w
 
             var_loss = zero_tensor(self._device)
-            instance_loss = zero_tensor(self._device)
+
+            pred = torch.exp(-1 * torch.sum(
+                torch.pow(spatial_emb, 2) * sigma, 0, keepdim=True))
+            instance_loss = focal_loss(pred, kp_mask[b_i])
 
             centers_np = np.vstack(centers)
             centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].unsqueeze(1)
 
             for n_i in range(n):
-                center, kps = centers[n_i].astype(np.int32), polygons[n_i]
-
-                # calculate gaussian
-                center_s = xym_s[:, center[0], center[1]].view(2, 1, 1)
-                pred = torch.exp(-1 * torch.sum(
-                    torch.pow(spatial_emb - center_s, 2) * sigma, 0, keepdim=True))
-
-                mask = torch.from_numpy(generate_kp_mask(kps, (h, w))).view(1, h, w).to(self._device)
-                instance_loss += focal_loss(pred, mask)
+                kps = polygons[n_i]
 
                 # calculate the delta distance
                 selected_emb = spatial_emb[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
