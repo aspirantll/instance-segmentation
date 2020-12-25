@@ -95,21 +95,28 @@ def generate_cls_mask(target_size, cls_locations_list, cls_ids_list, box_sizes_l
     return target_mask
 
 
-def generate_instance_mask(target_size, polygons_list):
+def generate_kp_mask(target_size, polygons_list, strategy="one-hot", radius=2):
     """
     generate the kp mask
     :param target_size: tuple(b, c, h, w)
     :param polygons_list: list(list(ndarray(n*2)))
+    :param strategy: smoothing, one-hot
+    :param radius: the circle
     :return: b* 1 * h * w
     """
     b, c, h, w = target_size
     assert b == len(polygons_list)
-    target_mask = -np.ones((b, 1, h, w), dtype=np.float32)
+    target_mask = np.zeros((b, 1, h, w), dtype=np.float32)
     for b_i in range(b):
         polygons = polygons_list[b_i]
-        for it, polygon in enumerate(polygons):
-            target_mask[b_i, 0, polygon[:, 0], polygon[:, 1]] = it
-
+        for polygon in polygons:
+            for pixel in polygon:
+                if strategy == "one-hot":
+                    target_mask[b_i, 0, pixel[0], pixel[1]] = 1
+                elif strategy == "smoothing":
+                    target_mask[b_i, 0] = draw_umich_gaussian(target_mask[b_i, 0], pixel, radius)
+                else:
+                    raise ValueError("invalid strategy:{}".format(strategy))
     return target_mask
 
 
@@ -308,8 +315,7 @@ def generate_all_annotations(target_size, targets):
 
     dense_polygons_list, normal_vector_list = dense_sample_polygon(polygons_list, h, w)
 
-    instance_mask = generate_instance_mask(target_size, dense_polygons_list)
-    kp_annotations = (instance_mask >= 0).astype(np.float32)
+    kp_annotations = generate_kp_mask(target_size, polygons_list, strategy="smoothing")
 
     centers_list = [[(box[0]+box[1])[::-1]/2 for box in boxes] for boxes in boxes_list]
     ae_annotations = (centers_list, dense_polygons_list, kp_annotations)
