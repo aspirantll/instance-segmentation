@@ -312,7 +312,7 @@ class KPFocalLoss:
     def __call__(self, hm_kp, targets):
         # prepare step
         kp_mask = torch.from_numpy(targets).to(self._device)
-        focal_loss(hm_kp, kp_mask)
+        return focal_loss(hm_kp, kp_mask)
 
 
 class AELoss(object):
