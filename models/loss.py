@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from utils.target_generator import generate_all_annotations, generate_kp_mask
+from utils.target_generator import generate_all_annotations
 from utils.utils import BBoxTransform, ClipBoxes, postprocess, display, generate_coordinates
 
 
@@ -272,29 +272,6 @@ class FocalLoss(object):
         return pos_loss.mean() + neg_loss.mean()
 
 
-class KPFocalLoss(FocalLoss):
-
-    def __init__(self, device, alpha=0.25, beta=2, epsilon=0.9, init_loss_normalizer=100):
-        super(KPFocalLoss, self).__init__(device, alpha, beta, epsilon, init_loss_normalizer)
-
-    def __call__(self, hm_kp, targets):
-        # prepare step
-        kp_mask = torch.from_numpy(targets).to(self._device)
-        return super().__call__(hm_kp, kp_mask)
-
-
-def generate_center_radius_indexes(point, radius, max_x, max_y):
-    indexes_list = []
-    delta = radius // 2
-    for i in range(-delta, delta):
-        for j in range(-delta, delta):
-            x = int(point[0]) + i
-            y = int(point[1]) + j
-            if 0 <= x < max_x and 0 <= y < max_y:
-                indexes_list.append([x, y])
-    return np.array(indexes_list)
-
-
 def focal_loss(pred, gt):
     ''' Modified focal loss. Exactly the same as CornerNet.
         Runs faster and costs a little bit more memory
@@ -325,6 +302,17 @@ def focal_loss(pred, gt):
     if torch.isnan(loss):
         raise RuntimeError("loss nan")
     return loss
+
+
+class KPFocalLoss:
+
+    def __init__(self, device):
+        self._device = device
+
+    def __call__(self, hm_kp, targets):
+        # prepare step
+        kp_mask = torch.from_numpy(targets).to(self._device)
+        focal_loss(hm_kp, kp_mask)
 
 
 class AELoss(object):
