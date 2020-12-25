@@ -95,7 +95,7 @@ def generate_cls_mask(target_size, cls_locations_list, cls_ids_list, box_sizes_l
     return target_mask
 
 
-def generate_kp_mask(target_size, polygons_list, strategy="one-hot", radius=2):
+def generate_kp_annotations(target_size, polygons_list, strategy="one-hot", radius=2):
     """
     generate the kp mask
     :param target_size: tuple(b, c, h, w)
@@ -315,7 +315,7 @@ def generate_all_annotations(target_size, targets):
 
     dense_polygons_list, normal_vector_list = dense_sample_polygon(polygons_list, h, w)
 
-    kp_annotations = generate_kp_mask(target_size, polygons_list, strategy="smoothing")
+    kp_annotations = generate_kp_annotations(target_size, polygons_list, strategy="smoothing")
 
     centers_list = [[(box[0]+box[1])[::-1]/2 for box in boxes] for boxes in boxes_list]
     ae_annotations = (centers_list, dense_polygons_list, kp_annotations)
