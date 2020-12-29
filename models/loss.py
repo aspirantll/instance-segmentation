@@ -422,15 +422,15 @@ class ComposeLoss(nn.Module):
     def forward(self, outputs, targets):
         # unpack the output
         kp_out, regression, classification, anchors = outputs
-        det_annotations, kp_annotations, ae_annotations, tan_annotations = generate_all_annotations(kp_out.shape,
+        det_annotations, kp_annotations, ae_annotations, tan_annotations = generate_all_annotations(kp_out[0].shape,
                                                                                                     targets)
 
         losses = []
         losses.extend(self.det_focal_loss(classification, regression, anchors,
                                           torch.from_numpy(det_annotations).to(self._device)))
-        losses.append(self.kp_loss(kp_out[:, 0:1, :, :], kp_annotations))
-        losses.append(self.ae_loss(kp_out[:, 1:5, :, :], ae_annotations))
-        losses.append(self.tan_loss(kp_out[:, 5:7, :, :], tan_annotations))
+        losses.append(self.kp_loss(kp_out[0], kp_annotations))
+        losses.append(self.ae_loss(kp_out[1], ae_annotations))
+        losses.append(self.tan_loss(kp_out[2], tan_annotations))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()

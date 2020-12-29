@@ -443,7 +443,7 @@ def decode_output(inputs, outs, infos, transforms, decode_cfg, device):
     kp_out, regression, classification, anchors = outs
     det_boxes = decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
 
-    dets = parell_util.multi_apply(decode_single, kp_out[:, 0:1, :, :], kp_out[:, 1:5, :, :], det_boxes, infos, transforms=transforms
+    dets = parell_util.multi_apply(decode_single, kp_out[0], kp_out[1], det_boxes, infos, transforms=transforms
                                    , decode_cfg=decode_cfg, device=device)
 
     return dets[0]

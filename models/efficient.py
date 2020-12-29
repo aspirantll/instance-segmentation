@@ -524,7 +524,7 @@ class UpsamplerBlock (nn.Module):
 
 
 class Decoder (nn.Module):
-    def __init__(self, num_classes, channels):
+    def __init__(self, channels, heads):
         super().__init__()
 
         self.layers = nn.ModuleList()
@@ -545,8 +545,11 @@ class Decoder (nn.Module):
         self.layers.append(non_bottleneck_1d(channels[4], 0, 1))
         self.layers.append(non_bottleneck_1d(channels[4], 0, 1))
 
-        self.output_conv = nn.ConvTranspose2d(
-            channels[4], num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
+        self.heads = heads
+        for head, channel in heads.items():
+            output_conv = nn.ConvTranspose2d(
+                channels[4], channel, 2, stride=2, padding=0, output_padding=0, bias=True)
+            self.__setattr__(head, output_conv)
 
     def forward(self, input):
         output = input
@@ -554,9 +557,12 @@ class Decoder (nn.Module):
         for layer in self.layers:
             output = layer(output)
 
-        output = self.output_conv(output)
+        outs = []
+        for head in self.heads.keys():
+            output_conv = self.__getattr__(head)
+            outs.append(output_conv(output))
 
-        return output
+        return tuple(outs)
 
 
 class EfficientSeg(nn.Module):
@@ -623,7 +629,7 @@ class EfficientSeg(nn.Module):
             8: [640, 224, 80],
         }
 
-        self.kp_header = Decoder(7, channels[compound_coef])
+        self.kp_header = Decoder(channels[compound_coef], {"kp": 1, "ae": 4, "tan": 2})
 
     def freeze_bn(self):
         for m in self.modules():
