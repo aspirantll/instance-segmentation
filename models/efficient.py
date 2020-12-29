@@ -419,7 +419,7 @@ class Classifier(nn.Module):
 
 class EfficientNet(nn.Module):
     """
-    modified by Zylo117
+    modified by Zylo117D
     """
 
     def __init__(self, compound_coef, load_weights=False):
@@ -524,7 +524,7 @@ class UpsamplerBlock (nn.Module):
 
 
 class Decoder (nn.Module):
-    def __init__(self, num_classes, channels):
+    def __init__(self, channels, heads):
         super().__init__()
 
         self.layers = nn.ModuleList()
@@ -545,8 +545,11 @@ class Decoder (nn.Module):
         self.layers.append(non_bottleneck_1d(channels[4], 0, 1))
         self.layers.append(non_bottleneck_1d(channels[4], 0, 1))
 
-        self.output_conv = nn.ConvTranspose2d(
-            channels[4], num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
+        self.heads = heads
+        for head, channel in heads.items():
+            output_conv = nn.ConvTranspose2d(
+                channels[4], channel, 2, stride=2, padding=0, output_padding=0, bias=True)
+            self.__setattr__(head, output_conv)
 
     def forward(self, input):
         output = input
@@ -554,9 +557,12 @@ class Decoder (nn.Module):
         for layer in self.layers:
             output = layer(output)
 
-        output = self.output_conv(output)
+        outs = []
+        for head in self.heads.keys():
+            output_conv = self.__getattr__(head)
+            outs.append(output_conv(output))
 
-        return output
+        return tuple(outs)
 
 
 class EfficientSeg(nn.Module):
@@ -573,42 +579,8 @@ class EfficientSeg(nn.Module):
         self.anchor_scale = [4., 4., 4., 4., 4., 4., 4., 5., 4.]
         self.aspect_ratios = kwargs.get('ratios', [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)])
         self.num_scales = len(kwargs.get('scales', [2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]))
-        conv_channel_coef = {
-            # the channels of P3/P4/P5.
-            0: [40, 112, 320],
-            1: [40, 112, 320],
-            2: [48, 120, 352],
-            3: [48, 136, 384],
-            4: [56, 160, 448],
-            5: [64, 176, 512],
-            6: [72, 200, 576],
-            7: [72, 200, 576],
-            8: [80, 224, 640],
-        }
-
-        num_anchors = len(self.aspect_ratios) * self.num_scales
-
-        self.bifpn = nn.Sequential(
-            *[BiFPN(self.fpn_num_filters[self.compound_coef],
-                    conv_channel_coef[compound_coef],
-                    True if _ == 0 else False,
-                    attention=True if compound_coef < 6 else False,
-                    use_p8=compound_coef > 7)
-              for _ in range(self.fpn_cell_repeats[compound_coef])])
 
         self.num_classes = num_classes
-        self.regressor = Regressor(in_channels=self.fpn_num_filters[self.compound_coef], num_anchors=num_anchors,
-                                   num_layers=self.box_class_repeats[self.compound_coef],
-                                   pyramid_levels=self.pyramid_levels[self.compound_coef])
-        self.classifier = Classifier(in_channels=self.fpn_num_filters[self.compound_coef], num_anchors=num_anchors,
-                                     num_classes=num_classes,
-                                     num_layers=self.box_class_repeats[self.compound_coef],
-                                     pyramid_levels=self.pyramid_levels[self.compound_coef])
-
-        self.anchors = Anchors(anchor_scale=self.anchor_scale[compound_coef],
-                               pyramid_levels=(torch.arange(self.pyramid_levels[self.compound_coef]) + 3).tolist(),
-                               **kwargs)
-
         self.backbone_net = EfficientNet(self.backbone_compound_coef[compound_coef], load_weights)
 
         channels = {
@@ -623,7 +595,8 @@ class EfficientSeg(nn.Module):
             8: [640, 224, 80],
         }
 
-        self.kp_header = Decoder(7, channels[compound_coef])
+        self.obj_header = Decoder(channels[compound_coef], {"cls": num_classes, "wh": 2})
+        self.ae_header = Decoder(channels[compound_coef], {"kp": 1, "ae": 4, "tan": 2})
 
     def freeze_bn(self):
         for m in self.modules():
@@ -633,15 +606,9 @@ class EfficientSeg(nn.Module):
     def forward(self, inputs):
         _, _, p3, p4, p5 = self.backbone_net(inputs)
 
-        features = (p3, p4, p5)
-        features = self.bifpn(features)
-
-        regression = self.regressor(features)
-        classification = self.classifier(features)
-        anchors = self.anchors(inputs, inputs.dtype)
-
-        kp_out = self.kp_header(p5)
-        return kp_out, regression, classification, anchors
+        cls_out, wh_out = self.obj_header(p5)
+        kp_out, ae_out, tan_out = self.ae_header(p5)
+        return cls_out, wh_out, kp_out, ae_out, tan_out
 
     def init_backbone(self, path):
         state_dict = torch.load(path)
@@ -652,7 +619,23 @@ class EfficientSeg(nn.Module):
             print('Ignoring ' + str(e) + '"')
 
     def init_weight(self):
-        for name, module in self.kp_header.named_modules():
+        for name, module in self.obj_header.named_modules():
+            is_conv_layer = isinstance(module, nn.Conv2d)
+
+            if is_conv_layer:
+                if "conv_list" or "header" in name:
+                    variance_scaling_(module.weight.data)
+                else:
+                    nn.init.kaiming_uniform_(module.weight.data)
+
+                if module.bias is not None:
+                    if "classifier.header" in name:
+                        bias_value = -np.log((1 - 0.01) / 0.01)
+                        torch.nn.init.constant_(module.bias, bias_value)
+                    else:
+                        module.bias.data.zero_()
+
+        for name, module in self.ae_header.named_modules():
             is_conv_layer = isinstance(module, nn.Conv2d)
 
             if is_conv_layer:

@@ -293,19 +293,11 @@ def generate_all_annotations(target_size, targets):
     cls_ids_list, polygons_list = targets
 
     boxes_list = [[(polygon.min(0)[::-1], polygon.max(0)[::-1]) for polygon in polygons] for polygons in polygons_list]
-
+    centers_list = [[(box[0]+box[1])/2 for box in boxes] for boxes in boxes_list]
+    box_sizes_list = [[ box[1]-box[0] for box in boxes] for boxes in boxes_list]
     b, c, h, w = target_size
-    max_num = max(len(cls_ids) for cls_ids in cls_ids_list)
-    det_annotations = np.ones((b, max_num, 5), dtype=np.float32) * -1
-
-    for b_i in range(b):
-        cls_ids = cls_ids_list[b_i]
-        boxes = boxes_list[b_i]
-        for o_j in range(len(cls_ids)):
-            det_annotations[b_i, o_j, :2] = boxes[o_j][0]
-            det_annotations[b_i, o_j, 2:4] = boxes[o_j][1]
-            det_annotations[b_i, o_j, 4] = cls_ids[o_j]
-
+    cls_annotations = generate_cls_mask(target_size, centers_list, cls_ids_list, box_sizes_list, strategy="smoothing")
+    wh_annotations = generate_wh_target(target_size, centers_list, box_sizes_list)
     dense_polygons_list, normal_vector_list = dense_sample_polygon(polygons_list, h, w)
 
     instance_mask = generate_instance_mask(target_size, dense_polygons_list)
@@ -315,5 +307,5 @@ def generate_all_annotations(target_size, targets):
     ae_annotations = (centers_list, dense_polygons_list)
     tan_annotations = (dense_polygons_list, normal_vector_list)
 
-    return det_annotations, kp_annotations, ae_annotations, tan_annotations
+    return cls_annotations, wh_annotations, kp_annotations, ae_annotations, tan_annotations
 
