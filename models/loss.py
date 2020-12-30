@@ -249,7 +249,6 @@ class AELoss(object):
     def __init__(self, device, weight=1):
         self._device = device
         self._weight = weight
-        self._xym = generate_coordinates().to(device)
 
     def __call__(self, ae, targets):
         """
@@ -261,48 +260,27 @@ class AELoss(object):
         b, c, h, w = ae.shape
         centers_list, polygons_list = targets
 
-        xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
-
-        ae_loss = zero_tensor(self._device)
+        ae_losses = []
+        # foreach every batch
         for b_i in range(b):
-            centers = centers_list[b_i]
-            polygons = polygons_list[b_i]
+            # select the active point
+            centers, polygons = centers_list[b_i], polygons_list[b_i]
             n = len(centers)
+            ae_loss = zero_tensor(self._device)
+            if n > 0:
+                ae_mat = ae[b_i]
+                t_centers = np.vstack(centers).transpose()
+                t_polygons = np.vstack(polygons).transpose()
+                center_tensor = torch.from_numpy(t_centers.astype(np.float32)).to(self._device)
+                polygon_tensor = torch.from_numpy(t_polygons.astype(np.float32)).to(self._device)
+                ae_tensor = ae_mat[:, t_polygons[0, :], t_polygons[1, :]]
+                ae_loss += (ae_tensor + polygon_tensor - center_tensor).pow(2).sum(dim=0).sqrt().mean()
 
-            if n <= 0:
-                continue
-
-            spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
-            sigma = ae[b_i, 2:4]  # n_sigma x h x w
-
-            var_loss = zero_tensor(self._device)
-            instance_loss = zero_tensor(self._device)
-
-            centers_np = np.vstack(centers)
-            centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].unsqueeze(1)
-
-            for n_i in range(n):
-                center, kps = centers[n_i].astype(np.int32), polygons[n_i]
-
-                # calculate gaussian
-                center_s = xym_s[:, center[0], center[1]].view(2, 1, 1)
-                pred = torch.exp(-1 * torch.sum(
-                    torch.pow(spatial_emb - center_s, 2) * sigma, 0, keepdim=True))
-
-                mask = torch.from_numpy(generate_kp_mask(kps, (h, w))).view(1, h, w).to(self._device)
-                instance_loss += focal_loss(pred, mask)
-
-                # calculate the delta distance
-                selected_emb = spatial_emb[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
-                selected_sigma = sigma[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
-                dists = torch.exp(-1 * torch.sum(
-                    torch.pow(selected_emb - centers_tensor, 2) * selected_sigma, 0))  # m x n
-                var_loss += nn.functional.l1_loss(dists[:, n_i], torch.max(dists, dim=1)[0], size_average=False)
-
-            ae_loss += (var_loss + instance_loss) / max(n, 1)
+            ae_losses.append(ae_loss)
 
         # compute mean loss
-        return self._weight * ae_loss / b
+        ae_loss = torch.stack(ae_losses).mean()
+        return self._weight * ae_loss
 
 
 class TangentLoss(object):

@@ -256,7 +256,7 @@ def dense_sample_polygon(polygons_list, h, w):
                         normal = -normal
 
                     increase = direction / max_distance
-                    for k in range(int(max_distance)):
+                    for k in range(0, int(max_distance), 2):
                         point = polygon[i] + increase*k
                         if 0 < point[0] < h-1 and 0 < point[1] < w-1:
                             n_polygon.append(point)
