@@ -629,7 +629,7 @@ class EfficientSeg(nn.Module):
             8: [640, 224, 80],
         }
 
-        self.kp_header = Decoder(channels[compound_coef], {"kp": 1, "ae": 4, "tan": 2})
+        self.kp_header = Decoder(channels[compound_coef], {"kp": 1, "ae": 2, "tan": 2})
 
     def freeze_bn(self):
         for m in self.modules():
