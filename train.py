@@ -124,6 +124,7 @@ def load_state_dict(model, save_dir, pretrained):
     :return:
     """
     if pretrained is not None:
+        model.init_weight()
         state_dict = torch.load(pretrained)
         try:
             ret = model.load_state_dict(state_dict, strict=False)
@@ -141,9 +142,7 @@ def load_state_dict(model, save_dir, pretrained):
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
                 best_ap = checkpoint["best_ap"] if "best_ap" in checkpoint else 0
-                save_checkpoint(model.state_dict(), 0, 0, data_cfg.save_dir)
-                return 0, best_ap
-    model.init_weight()
+                return start_epoch+1, best_ap
     save_checkpoint(model.state_dict(), 0, 0, data_cfg.save_dir)
     return 0, 0
 
