@@ -312,7 +312,13 @@ def generate_all_annotations(target_size, targets):
     kp_annotations = (instance_mask >= 0).astype(np.float32)
 
     centers_list = [[(box[0]+box[1])[::-1]/2 for box in boxes] for boxes in boxes_list]
-    ae_annotations = (centers_list, dense_polygons_list)
+    repeat_centers = []
+    for b_i in range(b):
+        repeat_centers.append([])
+        for o_j in range(len(polygons_list[b_i])):
+            center = np.array(centers_list[b_i][o_j], dtype=np.float32).reshape(-1, 2)
+            repeat_centers[b_i].append(center.repeat(len(polygons_list[b_i][o_j]), axis=0))
+    ae_annotations = (repeat_centers, polygons_list)
     tan_annotations = (dense_polygons_list, normal_vector_list)
 
     return det_annotations, kp_annotations, ae_annotations, tan_annotations
