@@ -529,9 +529,9 @@ class Decoder (nn.Module):
 
         self.layers = nn.ModuleList()
 
-        # self.layers.append(UpsamplerBlock(channels[0], channels[1]))
-        # self.layers.append(non_bottleneck_1d(channels[1], 0, 1))
-        # self.layers.append(non_bottleneck_1d(channels[1], 0, 1))
+        self.layers.append(UpsamplerBlock(channels[0], channels[1]))
+        self.layers.append(non_bottleneck_1d(channels[1], 0, 1))
+        self.layers.append(non_bottleneck_1d(channels[1], 0, 1))
 
         self.layers.append(UpsamplerBlock(channels[1], channels[2]))
         self.layers.append(non_bottleneck_1d(channels[2], 0, 1))
@@ -646,7 +646,7 @@ class EfficientSeg(nn.Module):
         classification = self.classifier(features)
         anchors = self.anchors(inputs, inputs.dtype)
 
-        kp_out = self.kp_header(p4)
+        kp_out = self.kp_header(p5)
         return kp_out, regression, classification, anchors
 
     def init_backbone(self, path):
