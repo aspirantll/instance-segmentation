@@ -1,6 +1,6 @@
 data:
-  train_dir:  D:\cityscapes
-  save_dir: D:\checkpoints\efficient
+  train_dir:  /media/liulei/Data/cityscapes
+  save_dir: /media/liulei/Data/checkpoints/efficient
   dataset: cityscapes
   batch_size: 1
   input_size: (512, 1024)
@@ -11,14 +11,14 @@ optimizer:
   type: Adam
   momentum: 0.9
 
-max_iter: -1
+max_iter: 60
 num_epochs: 2000
-save_span: 100
+save_span: 1000
 seed: 1
 compound_coef: 3
 anchors_scales: '[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]'
 anchors_ratios: '[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]'
-pretrained_path: D:\checkpoints\efficient\efficientdet-d3.pth
-decode_cfg_path: .\configs\decode_cfg.yaml
-trans_cfg_path: .\configs\trans_cfg.json
-start_eval_epoch: 0
+pretrained_path: /media/liulei/Data/checkpoints/efficient/efficientdet-d3.pth
+decode_cfg_path: ./configs/decode_cfg.yaml
+trans_cfg_path: ./configs/trans_cfg.json
+start_eval_epoch: 1000
