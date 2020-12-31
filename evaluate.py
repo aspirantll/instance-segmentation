@@ -60,7 +60,7 @@ decode_cfg = Config(cfg.decode_cfg_path)
 trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 if 'resize' in trans_cfg.get('val_trans', 'trans_seq'):
-    decode.scale = trans_cfg.get('val_trans', 'resize')['scale']
+    decode.target_size = trans_cfg.get('val_trans', 'resize')['target_size']
 
 
 if data_cfg.num_classes == -1:

@@ -26,9 +26,13 @@ from utils.nms import py_cpu_nms
 from utils import parell_util
 
 base_dir = r""
-scale = 1
+target_size = 1024
 
 xym = generate_coordinates()
+
+
+def compute_scale(info):
+    return target_size
 
 
 def to_numpy(tensor):
@@ -222,7 +226,7 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
 
 def draw_box(box_sizes, centers, trans_info, transforms):
     centers = [transforms.detransform_pixel(center, trans_info)[0] for center in centers]
-    box_sizes = [box_size[::-1] * scale for box_size in box_sizes]
+    box_sizes = [box_size[::-1] * compute_scale(trans_info) for box_size in box_sizes]
 
     img = cv2.imread(trans_info.img_path)
     img = visualize_box(img, centers, box_sizes, mask=True)
@@ -269,7 +273,7 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
         whs = center_whs[:, select_indexes]
         centers = center_indexes[select_indexes, :]
         transformed_centers = transforms.detransform_pixel(centers, info)[:, ::-1]
-        scaled_whs = whs * scale
+        scaled_whs = whs * compute_scale(info)
         boxes = np.array([[*(transformed_centers[j] - scaled_whs[:, j]/2), *(transformed_centers[j] + scaled_whs[:, j]/2), confs[j]] for j in range(transformed_centers.shape[0])], dtype=np.float32)
         keep = py_cpu_nms(boxes, thresh=0.5)
 
@@ -281,7 +285,7 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
     return keep_center_cls, keep_center_indexes, keep_center_confs, keep_center_whs
 
 
-def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, center_confs, infos, decode_cfg, device):
+def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, center_confs, info, decode_cfg, device):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -302,7 +306,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
 
     # generate the centers
     if decode_cfg.draw_flag:
-        draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, infos, "bound")
+        draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, info, "bound")
 
     # clear the non-active part
     correspond_index = kp_mask.nonzero()
@@ -320,20 +324,20 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     kps = []
     n_clss = []
     n_confs = []
-    img = cv2.imread(infos.img_path)
+    img = cv2.imread(info.img_path)
     color = [int(e) for e in np.random.random_integers(0, 256, 3)]
     for i in range(objs_num):
         # filter the boxes
-        h, w = tuple(center_whs[i] * scale)
+        h, w = tuple(center_whs[i] * compute_scale(info))
 
         # get the points for center
         kp_pixels = correspond_index[to_numpy((correspond_vec == i).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
-        true_pixels = transforms.detransform_pixel(true_pixels, infos)
+        true_pixels = transforms.detransform_pixel(true_pixels, info)
 
         center_loc = center_indexes[i]
-        center_loc = transforms.detransform_pixel(center_loc, infos)[0]
+        center_loc = transforms.detransform_pixel(center_loc, info)[0]
         x, y = center_loc[0], center_loc[1]
         # filter the ghost point
         x_mask = (x - (0.5 + decode_cfg.wh_delta) * w < true_pixels[:, 0]) * (true_pixels[:, 0] < x + (0.5 + decode_cfg.wh_delta) * w)
@@ -357,7 +361,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
             n_confs.append(center_confs[i])
     if decode_cfg.draw_flag:
         cv2.imwrite(
-            r'{}/{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
+            r'{}/{}_{}.png'.format(base_dir, os.path.basename(info.img_path), "candid"),
             img)
     return n_clss, n_confs, n_centers, kps
 
