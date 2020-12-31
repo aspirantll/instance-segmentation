@@ -20,19 +20,11 @@ def is_val_phase(phase):
 
 
 class DatasetBuilder(object):
-    def __init__(self, data_dir, phase="train", ann_file=None):
+    def __init__(self, data_dir, phase="train"):
         if data_dir is None:
             raise Exception("The data_dir must be not None.")
         self._data_dir = data_dir
         self._phase = phase
-        if ann_file is None:
-            self._ann_file = self.default_ann_file()
-        else:
-            self._ann_file = ann_file
-
-    @abc.abstractmethod
-    def default_ann_file(self):
-        pass
 
     @abc.abstractmethod
     def get_dataset(self, **kwargs):

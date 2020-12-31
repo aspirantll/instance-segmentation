@@ -41,11 +41,8 @@ class DirDataset(data.Dataset):
 
 
 class DirDatasetBuilder(DatasetBuilder):
-    def __init__(self, data_dir,  phase, ann_file):
-        super().__init__(data_dir, phase, ann_file)
-
-    def default_ann_file(self):
-        return ""
+    def __init__(self, data_dir,  phase):
+        super().__init__(data_dir, phase)
 
     def get_dataset(self, **kwargs):
         return DirDataset(self._data_dir, **kwargs)

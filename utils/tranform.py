@@ -131,7 +131,8 @@ class CommonTransforms(object):
             ToTensor(),
             Normalize(div_value=self.configer.get('normalize', 'div_value'),
                             mean=self.configer.get('normalize', 'mean'),
-                            std=self.configer.get('normalize', 'std')), ])
+                            std=self.configer.get('normalize', 'std')), ]
+        )
         self.label_transform = Compose([
             CoordinateReverser()
         ])

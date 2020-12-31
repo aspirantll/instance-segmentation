@@ -1,6 +1,6 @@
 data:
-  eval_dir:  D:\cityscapes
-  save_dir: D:\checkpoints\efficient\eval
+  eval_dir:  /media/liulei/Data/cityscapes
+  save_dir: /media/liulei/Data/checkpoints/efficient/eval
   dataset: cityscapes
   batch_size: 2
   input_size: (512, 1024)
@@ -8,9 +8,9 @@ data:
   subset: val
 
 seed: 1
-compound_coef: 4
-weights_path: D:\checkpoints\efficient\efficient_weights_00000100.pth
-weights_dir:  #E:\checkpoints\weights
-decode_cfg_path: .\configs\decode_cfg.yaml
-trans_cfg_path: .\configs\trans_cfg.json
+compound_coef: 3
+weights_path: /media/liulei/Data/checkpoints/efficient/efficient_weights_00000051.pth
+weights_dir:
+decode_cfg_path: ./configs/decode_cfg.yaml
+trans_cfg_path: ./configs/trans_cfg.json
 

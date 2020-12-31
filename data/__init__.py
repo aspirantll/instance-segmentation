@@ -11,17 +11,19 @@ __version__ = "1.0.0"
 
 import torch
 from data.dataset import is_train_phase, is_val_phase
-from data import cityscapes
+from data import cityscapes, coco
 from data.dir import DirDatasetBuilder
 
 
 datasetBuildersMap = {
     "cityscapes": cityscapes.CityscapesDatasetBuilder,
+    "coco": coco.COCODatasetBuilder,
     "dir": DirDatasetBuilder
 }
 
 datasetClsNumMap = {
-    "cityscapes": cityscapes.num_cls
+    "cityscapes": cityscapes.num_cls,
+    "coco": coco.num_cls
 }
 
 datasetEvalLabelMap = {
@@ -62,8 +64,7 @@ def collate_fn_without_label(batch):
     return input_tensors, trans_infos
 
 
-def get_dataloader(batch_size, dataset_type, data_dir, phase, transforms=None
-                   , ann_file=None, num_workers=0, random=False, with_label=True):
+def get_dataloader(batch_size, dataset_type, data_dir, phase, transforms=None, num_workers=0, random=False, with_label=True):
     """
     initialize the data loader, and then return a data loader
     :param num_workers: worker num
@@ -71,7 +72,6 @@ def get_dataloader(batch_size, dataset_type, data_dir, phase, transforms=None
     :param batch_size:
     :param dataset_type:
     :param data_dir:
-    :param ann_file:
     :param random:
     :param transforms:
     :return:
@@ -79,7 +79,7 @@ def get_dataloader(batch_size, dataset_type, data_dir, phase, transforms=None
     # determine the class of DatasetBuilder by dataset type
     dataset_builder_class = datasetBuildersMap[dataset_type]
     # initialize dataset
-    dataset_builder = dataset_builder_class(data_dir, phase, ann_file)
+    dataset_builder = dataset_builder_class(data_dir, phase)
     dataset = dataset_builder.get_dataset(transforms=transforms)
     if with_label:
         if is_train_phase(phase):
