@@ -32,7 +32,7 @@ xym = generate_coordinates()
 
 
 def compute_scale(info):
-    return max(*info.img_size)/target_size
+    return target_size
 
 
 def to_numpy(tensor):

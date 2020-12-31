@@ -14,13 +14,13 @@
       "swap_pair": []
     },
     "resize": {
-      "target_size": 512
+      "target_size": 2
     }
   },
   "val_trans": {
     "trans_seq": ["resize"],
     "resize": {
-      "target_size": 1024
+      "target_size": 2
     }
   },
   "normalize": {

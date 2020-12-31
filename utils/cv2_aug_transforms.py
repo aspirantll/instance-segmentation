@@ -467,25 +467,17 @@ class Resize(object):
         assert isinstance(img, np.ndarray)
 
         height, width, _ = img.shape
-        if height > width:
-            scale = self.target_size / height
-            resized_height = self.target_size
-            resized_width = int(width * scale)
-        else:
-            scale = self.target_size / width
-            resized_height = int(height * scale)
-            resized_width = self.target_size
+        scale = 1/self.target_size
+        resized_height = int(height*scale)
+        resized_width = int(width * scale)
 
         image = cv2.resize(img, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
-
-        new_image = np.zeros((self.target_size, self.target_size, 3))
-        new_image[0:resized_height, 0:resized_width] = image
 
         if label is not None:
             cls_ids, polygons = label
             label = (cls_ids, [polygon*scale for polygon in polygons])
 
-        return new_image, label
+        return image, label
 
 
 class CV2AugCompose(object):
