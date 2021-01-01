@@ -131,8 +131,7 @@ class CommonTransforms(object):
             ToTensor(),
             Normalize(div_value=self.configer.get('normalize', 'div_value'),
                             mean=self.configer.get('normalize', 'mean'),
-                            std=self.configer.get('normalize', 'std')), ]
-        )
+                            std=self.configer.get('normalize', 'std')), ])
         self.label_transform = Compose([
             CoordinateReverser()
         ])
@@ -160,8 +159,8 @@ class CommonTransforms(object):
         img_size = info.img_size
 
         if 'resize' in self.configer.get('val_trans', 'trans_seq'):
-            if 'target_size' in self.configer.get('val_trans', 'resize'):
-                scale = self.configer.get('val_trans', 'resize')['target_size']
+            if 'scale' in self.configer.get('val_trans', 'resize'):
+                scale = self.configer.get('val_trans', 'resize')['scale']
                 w_scale_ratio, h_scale_ratio = 1 / scale, 1 / scale
                 height, width = img_size
                 target_size = (int(round(width * w_scale_ratio)), int(round(height * h_scale_ratio)))

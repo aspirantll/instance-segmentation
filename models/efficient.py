@@ -469,74 +469,98 @@ def variance_scaling_(tensor, gain=1.):
     return _no_grad_normal_(tensor, 0., std)
 
 
-def double_conv(in_channels, out_channels):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True),
-        nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True)
-    )
-
-
-def up_conv(in_channels, out_channels):
-    return nn.ConvTranspose2d(
-        in_channels, out_channels, kernel_size=2, stride=2
-    )
-
-
-class EfficientDecoder(nn.Module):
-    def __init__(self, channels, headers, concat_input=True):
+class non_bottleneck_1d(nn.Module):
+    def __init__(self, chann, dropprob, dilated):
         super().__init__()
-        self.headers = headers
-        self.concat_input = concat_input
 
-        self.up_conv1 = up_conv(channels[0], 256)
-        self.double_conv1 = double_conv(channels[1]+256, 256)
-        self.up_conv2 = up_conv(256, 128)
-        self.double_conv2 = double_conv(channels[2]+128, 128)
-        self.up_conv3 = up_conv(128, 64)
-        self.double_conv3 = double_conv(channels[3]+64, 64)
-        self.up_conv4 = up_conv(64, 32)
-        self.double_conv4 = double_conv(channels[4]+32, 32)
+        self.conv3x1_1 = nn.Conv2d(
+            chann, chann, (3, 1), stride=1, padding=(1, 0), bias=True)
 
-        if self.concat_input:
-            self.up_conv_input = up_conv(32, 16)
-            self.double_conv_input = double_conv(3+16, 16)
+        self.conv1x3_1 = nn.Conv2d(
+            chann, chann, (1, 3), stride=1, padding=(0, 1), bias=True)
 
-        for header, channel in self.headers.items():
-            head_conv = nn.Conv2d(16, channel, kernel_size=1)
-            self.__setattr__(header, head_conv)
+        self.bn1 = nn.BatchNorm2d(chann, eps=1e-03)
 
-    def forward(self, input_, blocks):
-        x = blocks[-1]
+        self.conv3x1_2 = nn.Conv2d(chann, chann, (3, 1), stride=1, padding=(
+            1*dilated, 0), bias=True, dilation=(dilated, 1))
 
-        x = self.up_conv1(x)
-        x = torch.cat([x, blocks[-2]], dim=1)
-        x = self.double_conv1(x)
+        self.conv1x3_2 = nn.Conv2d(chann, chann, (1, 3), stride=1, padding=(
+            0, 1*dilated), bias=True, dilation=(1, dilated))
 
-        x = self.up_conv2(x)
-        x = torch.cat([x, blocks[-3]], dim=1)
-        x = self.double_conv2(x)
+        self.bn2 = nn.BatchNorm2d(chann, eps=1e-03)
 
-        x = self.up_conv3(x)
-        x = torch.cat([x, blocks[-4]], dim=1)
-        x = self.double_conv3(x)
+        self.dropout = nn.Dropout2d(dropprob)
 
-        x = self.up_conv4(x)
-        x = torch.cat([x, blocks[-5]], dim=1)
-        x = self.double_conv4(x)
+    def forward(self, input):
 
-        if self.concat_input:
-            x = self.up_conv_input(x)
-            x = torch.cat([x, input_], dim=1)
-            x = self.double_conv_input(x)
+        output = self.conv3x1_1(input)
+        output = F.relu(output)
+        output = self.conv1x3_1(output)
+        output = self.bn1(output)
+        output = F.relu(output)
+
+        output = self.conv3x1_2(output)
+        output = F.relu(output)
+        output = self.conv1x3_2(output)
+        output = self.bn2(output)
+
+        if (self.dropout.p != 0):
+            output = self.dropout(output)
+
+        return F.relu(output+input)  # +input = identity (residual connection)
+
+
+class UpsamplerBlock (nn.Module):
+    def __init__(self, ninput, noutput):
+        super().__init__()
+        self.conv = nn.ConvTranspose2d(
+            ninput, noutput, 3, stride=2, padding=1, output_padding=1, bias=True)
+        self.bn = nn.BatchNorm2d(noutput, eps=1e-3)
+
+    def forward(self, input):
+        output = self.conv(input)
+        output = self.bn(output)
+        return F.relu(output)
+
+
+class Decoder (nn.Module):
+    def __init__(self, channels, heads):
+        super().__init__()
+
+        self.layers = nn.ModuleList()
+
+        self.layers.append(UpsamplerBlock(channels[0], channels[1]))
+        self.layers.append(non_bottleneck_1d(channels[1], 0, 1))
+        self.layers.append(non_bottleneck_1d(channels[1], 0, 1))
+
+        self.layers.append(UpsamplerBlock(channels[1], channels[2]))
+        self.layers.append(non_bottleneck_1d(channels[2], 0, 1))
+        self.layers.append(non_bottleneck_1d(channels[2], 0, 1))
+
+        self.layers.append(UpsamplerBlock(channels[2], channels[3]))
+        self.layers.append(non_bottleneck_1d(channels[3], 0, 1))
+        self.layers.append(non_bottleneck_1d(channels[3], 0, 1))
+
+        self.layers.append(UpsamplerBlock(channels[3], channels[4]))
+        self.layers.append(non_bottleneck_1d(channels[4], 0, 1))
+        self.layers.append(non_bottleneck_1d(channels[4], 0, 1))
+
+        self.heads = heads
+        for head, channel in heads.items():
+            output_conv = nn.ConvTranspose2d(
+                channels[4], channel, 2, stride=2, padding=0, output_padding=0, bias=True)
+            self.__setattr__(head, output_conv)
+
+    def forward(self, input):
+        output = input
+
+        for layer in self.layers:
+            output = layer(output)
 
         outs = []
-        for header in self.headers.keys():
-            header_conv = self.__getattr__(header)
-            outs.append(header_conv(x))
+        for head in self.heads.keys():
+            output_conv = self.__getattr__(head)
+            outs.append(output_conv(output))
 
         return tuple(outs)
 
@@ -555,42 +579,8 @@ class EfficientSeg(nn.Module):
         self.anchor_scale = [4., 4., 4., 4., 4., 4., 4., 5., 4.]
         self.aspect_ratios = kwargs.get('ratios', [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)])
         self.num_scales = len(kwargs.get('scales', [2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]))
-        conv_channel_coef = {
-            # the channels of P3/P4/P5.
-            0: [40, 112, 320],
-            1: [40, 112, 320],
-            2: [48, 120, 352],
-            3: [48, 136, 384],
-            4: [56, 160, 448],
-            5: [64, 176, 512],
-            6: [72, 200, 576],
-            7: [72, 200, 576],
-            8: [80, 224, 640],
-        }
-
-        num_anchors = len(self.aspect_ratios) * self.num_scales
-
-        self.bifpn = nn.Sequential(
-            *[BiFPN(self.fpn_num_filters[self.compound_coef],
-                    conv_channel_coef[compound_coef],
-                    True if _ == 0 else False,
-                    attention=True if compound_coef < 6 else False,
-                    use_p8=compound_coef > 7)
-              for _ in range(self.fpn_cell_repeats[compound_coef])])
 
         self.num_classes = num_classes
-        self.regressor = Regressor(in_channels=self.fpn_num_filters[self.compound_coef], num_anchors=num_anchors,
-                                   num_layers=self.box_class_repeats[self.compound_coef],
-                                   pyramid_levels=self.pyramid_levels[self.compound_coef])
-        self.classifier = Classifier(in_channels=self.fpn_num_filters[self.compound_coef], num_anchors=num_anchors,
-                                     num_classes=num_classes,
-                                     num_layers=self.box_class_repeats[self.compound_coef],
-                                     pyramid_levels=self.pyramid_levels[self.compound_coef])
-
-        self.anchors = Anchors(anchor_scale=self.anchor_scale[compound_coef],
-                               pyramid_levels=(torch.arange(self.pyramid_levels[self.compound_coef]) + 3).tolist(),
-                               **kwargs)
-
         self.backbone_net = EfficientNet(self.backbone_compound_coef[compound_coef], load_weights)
 
         channels = {
@@ -605,7 +595,8 @@ class EfficientSeg(nn.Module):
             8: [640, 224, 80],
         }
 
-        self.kp_header = EfficientDecoder(channels[compound_coef], {"kp": 1, "ae": 4, "tan": 2})
+        self.obj_header = Decoder(channels[compound_coef], {"cls": num_classes, "wh": 2})
+        self.ae_header = Decoder(channels[compound_coef], {"kp": 1, "ae": 4, "tan": 2})
 
     def freeze_bn(self):
         for m in self.modules():
@@ -613,17 +604,11 @@ class EfficientSeg(nn.Module):
                 m.eval()
 
     def forward(self, inputs):
-        blocks = self.backbone_net(inputs)
+        _, _, p3, p4, p5 = self.backbone_net(inputs)
 
-        features = blocks[2:5]
-        features = self.bifpn(features)
-
-        regression = self.regressor(features)
-        classification = self.classifier(features)
-        anchors = self.anchors(inputs, inputs.dtype)
-
-        kp_out = self.kp_header(inputs, blocks)
-        return kp_out, regression, classification, anchors
+        cls_out, wh_out = self.obj_header(p5)
+        kp_out, ae_out, tan_out = self.ae_header(p5)
+        return cls_out, wh_out, kp_out, ae_out, tan_out
 
     def init_backbone(self, path):
         state_dict = torch.load(path)
@@ -634,7 +619,7 @@ class EfficientSeg(nn.Module):
             print('Ignoring ' + str(e) + '"')
 
     def init_weight(self):
-        for name, module in self.kp_header.named_modules():
+        for name, module in self.named_modules():
             is_conv_layer = isinstance(module, nn.Conv2d)
 
             if is_conv_layer:

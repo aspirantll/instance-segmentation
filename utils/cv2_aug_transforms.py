@@ -460,24 +460,22 @@ class Resize(object):
         scale_max: the max scale to resize.
     """
 
-    def __init__(self, target_size):
-        self.target_size = target_size
+    def __init__(self, scale):
+        self.scale = scale
 
     def __call__(self, img, label=None):
         assert isinstance(img, np.ndarray)
 
         height, width, _ = img.shape
-        scale = 1/self.target_size
-        resized_height = int(height*scale)
-        resized_width = int(width * scale)
+        w_scale_ratio, h_scale_ratio = 1 / self.scale, 1 / self.scale
+        target_size = (int(round(width * w_scale_ratio)), int(round(height * h_scale_ratio)))
 
-        image = cv2.resize(img, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
-
+        transform_matrix = image.get_affine_transform(img.shape[:2][::-1], target_size)
+        img = cv2.warpAffine(img, transform_matrix, target_size)
         if label is not None:
-            cls_ids, polygons = label
-            label = (cls_ids, [polygon*scale for polygon in polygons])
+            label = transform_label(label, transform_matrix, target_size)
 
-        return image, label
+        return img, label
 
 
 class CV2AugCompose(object):
@@ -647,9 +645,9 @@ class CV2AugCompose(object):
                 )
 
             if 'resize' in self.configer.get('train_trans', 'trans_seq') + shuffle_train_trans:
-                if 'target_size' in self.configer.get('train_trans', 'resize'):
+                if 'scale' in self.configer.get('train_trans', 'resize'):
                     self.transforms['resize'] = Resize(
-                        target_size=self.configer.get('train_trans', 'resize')['target_size']
+                        scale=self.configer.get('train_trans', 'resize')['scale']
                     )
 
         else:
@@ -792,9 +790,9 @@ class CV2AugCompose(object):
                 )
 
             if 'resize' in self.configer.get('val_trans', 'trans_seq'):
-                if 'target_size' in self.configer.get('val_trans', 'resize'):
+                if 'scale' in self.configer.get('val_trans', 'resize'):
                     self.transforms['resize'] = Resize(
-                        target_size=self.configer.get('val_trans', 'resize')['target_size']
+                        scale=self.configer.get('val_trans', 'resize')['scale']
                     )
 
     def __call__(self, img, label=None):

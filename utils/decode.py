@@ -2,7 +2,7 @@ __copyright__ = \
     """
     Copyright &copyright © (c) 2020 The Board of xx University.
     All rights reserved.
-    
+
     This software is covered by China patents and copyright.
     This source code is to be used for academic research purposes only, and no commercial use is allowed.
     """
@@ -25,13 +25,9 @@ from utils.nms import py_cpu_nms
 from utils import parell_util
 
 base_dir = r""
-target_size = 1024
+scale = 1
 
 xym = generate_coordinates()
-
-
-def compute_scale(info):
-    return target_size
 
 
 def to_numpy(tensor):
@@ -141,26 +137,25 @@ def filter_ghost_polygons(polygons, center):
 
 
 def smooth_polygon(polar_pts, sorted_inds, k=360):
-    d_seta = 2*np.pi/12
+    d_seta = 2 * np.pi / 12
     selected_inds = []
     cur_ind = -1
     cur_dist = -1
     cur_bin = 0
     for ind in sorted_inds:
-        index = math.floor(polar_pts[ind][0]/d_seta)
+        index = math.floor(polar_pts[ind][0] / d_seta)
         if index != cur_bin:
             if cur_ind >= 0:
                 selected_inds.append(cur_ind)
             cur_ind = -1
             cur_dist = -1
             cur_bin = index
-        elif polar_pts[ind][1]>cur_dist:
+        elif polar_pts[ind][1] > cur_dist:
             cur_ind = ind
             cur_dist = polar_pts[ind][1]
     if cur_ind >= 0:
         selected_inds.append(cur_ind)
     return selected_inds
-
 
 
 def aug_group(pts, center_loc):
@@ -204,7 +199,7 @@ def aug_group(pts, center_loc):
 
 
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
-    cv2.imwrite(r'{}/mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
+    cv2.imwrite(r'{}/mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask) * 255)
     kp_arr = to_numpy(kp_mask.nonzero())
     img = cv2.imread(infos.img_path)
     draw_kp(img, kp_arr, transforms, kp_threshold, infos, keyword)
@@ -225,7 +220,7 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
 
 def draw_box(box_sizes, centers, trans_info, transforms):
     centers = [transforms.detransform_pixel(center, trans_info)[0] for center in centers]
-    box_sizes = [box_size[::-1] * compute_scale(trans_info) for box_size in box_sizes]
+    box_sizes = [box_size[::-1] * scale for box_size in box_sizes]
 
     img = cv2.imread(trans_info.img_path)
     img = visualize_box(img, centers, box_sizes, mask=True)
@@ -247,7 +242,7 @@ def draw_objs(img, kp_index, kp_mask, transforms, infos):
 def draw_candid(kps, lt, rb, img, color):
     cv2.rectangle(img, lt, rb, color)
     return cv2.drawKeypoints(img, cv2.KeyPoint_convert(kps.reshape((-1, 1, 2))), None,
-                              color=color)
+                             color=color)
 
 
 def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
@@ -272,8 +267,10 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
         whs = center_whs[:, select_indexes]
         centers = center_indexes[select_indexes, :]
         transformed_centers = transforms.detransform_pixel(centers, info)[:, ::-1]
-        scaled_whs = whs * compute_scale(info)
-        boxes = np.array([[*(transformed_centers[j] - scaled_whs[:, j]/2), *(transformed_centers[j] + scaled_whs[:, j]/2), confs[j]] for j in range(transformed_centers.shape[0])], dtype=np.float32)
+        scaled_whs = whs * scale
+        boxes = np.array([[*(transformed_centers[j] - scaled_whs[:, j] / 2),
+                           *(transformed_centers[j] + scaled_whs[:, j] / 2), confs[j]] for j in
+                          range(transformed_centers.shape[0])], dtype=np.float32)
         keep = py_cpu_nms(boxes, thresh=0.5)
 
         keep_center_cls.extend(cls[keep])
@@ -284,7 +281,7 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
     return keep_center_cls, keep_center_indexes, keep_center_confs, keep_center_whs
 
 
-def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, center_confs, info, decode_cfg, device):
+def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, center_confs, infos, decode_cfg, device):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -305,7 +302,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
 
     # generate the centers
     if decode_cfg.draw_flag:
-        draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, info, "bound")
+        draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, infos, "bound")
 
     # clear the non-active part
     correspond_index = kp_mask.nonzero()
@@ -323,24 +320,26 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     kps = []
     n_clss = []
     n_confs = []
-    img = cv2.imread(info.img_path)
+    img = cv2.imread(infos.img_path)
     color = [int(e) for e in np.random.random_integers(0, 256, 3)]
     for i in range(objs_num):
         # filter the boxes
-        h, w = tuple(center_whs[i] * compute_scale(info))
+        h, w = tuple(center_whs[i] * scale)
 
         # get the points for center
         kp_pixels = correspond_index[to_numpy((correspond_vec == i).nonzero())[:, 0], :]
         true_pixels = to_numpy(kp_pixels.float())
         # transform to origin image pixel
-        true_pixels = transforms.detransform_pixel(true_pixels, info)
+        true_pixels = transforms.detransform_pixel(true_pixels, infos)
 
         center_loc = center_indexes[i]
-        center_loc = transforms.detransform_pixel(center_loc, info)[0]
+        center_loc = transforms.detransform_pixel(center_loc, infos)[0]
         x, y = center_loc[0], center_loc[1]
         # filter the ghost point
-        x_mask = (x - (0.5 + decode_cfg.wh_delta) * w < true_pixels[:, 0]) * (true_pixels[:, 0] < x + (0.5 + decode_cfg.wh_delta) * w)
-        y_mask = (y - (0.5 + decode_cfg.wh_delta) * h < true_pixels[:, 1]) * (true_pixels[:, 1] < y + (0.5 + decode_cfg.wh_delta) * h)
+        x_mask = (x - (0.5 + decode_cfg.wh_delta) * w < true_pixels[:, 0]) * (
+                    true_pixels[:, 0] < x + (0.5 + decode_cfg.wh_delta) * w)
+        y_mask = (y - (0.5 + decode_cfg.wh_delta) * h < true_pixels[:, 1]) * (
+                    true_pixels[:, 1] < y + (0.5 + decode_cfg.wh_delta) * h)
         filter_mask = x_mask * y_mask
         # filter_mask = np.ones(kp_pixels.shape[0], dtype=np.bool)
         if filter_mask.sum() < decode_cfg.obj_pixel_th:
@@ -352,7 +351,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
         if np_poly is not None:
             if decode_cfg.draw_flag:
                 img = draw_candid(np_poly, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)),
-                            img, (color[0] * (i+1) % 256, color[1] * (i+1) % 256, color[2] * (i+1) % 256))
+                                  img, (color[0] * (i + 1) % 256, color[1] * (i + 1) % 256, color[2] * (i + 1) % 256))
             # put to groups
             kps.append(np_poly)
             n_centers.append(center_loc)
@@ -360,7 +359,7 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
             n_confs.append(center_confs[i])
     if decode_cfg.draw_flag:
         cv2.imwrite(
-            r'{}/{}_{}.png'.format(base_dir, os.path.basename(info.img_path), "candid"),
+            r'{}/{}_{}.png'.format(base_dir, os.path.basename(infos.img_path), "candid"),
             img)
     return n_clss, n_confs, n_centers, kps
 
