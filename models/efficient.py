@@ -469,98 +469,74 @@ def variance_scaling_(tensor, gain=1.):
     return _no_grad_normal_(tensor, 0., std)
 
 
-class non_bottleneck_1d(nn.Module):
-    def __init__(self, chann, dropprob, dilated):
+def double_conv(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
+        nn.BatchNorm2d(out_channels),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
+        nn.BatchNorm2d(out_channels),
+        nn.ReLU(inplace=True)
+    )
+
+
+def up_conv(in_channels, out_channels):
+    return nn.ConvTranspose2d(
+        in_channels, out_channels, kernel_size=2, stride=2
+    )
+
+
+class EfficientDecoder(nn.Module):
+    def __init__(self, channels, headers, concat_input=True):
         super().__init__()
+        self.headers = headers
+        self.concat_input = concat_input
 
-        self.conv3x1_1 = nn.Conv2d(
-            chann, chann, (3, 1), stride=1, padding=(1, 0), bias=True)
+        self.up_conv1 = up_conv(channels[0], 256)
+        self.double_conv1 = double_conv(channels[1]+256, 256)
+        self.up_conv2 = up_conv(256, 128)
+        self.double_conv2 = double_conv(channels[2]+128, 128)
+        self.up_conv3 = up_conv(128, 64)
+        self.double_conv3 = double_conv(channels[3]+64, 64)
+        self.up_conv4 = up_conv(64, 32)
+        self.double_conv4 = double_conv(channels[4]+32, 32)
 
-        self.conv1x3_1 = nn.Conv2d(
-            chann, chann, (1, 3), stride=1, padding=(0, 1), bias=True)
+        if self.concat_input:
+            self.up_conv_input = up_conv(32, 16)
+            self.double_conv_input = double_conv(3+16, 16)
 
-        self.bn1 = nn.BatchNorm2d(chann, eps=1e-03)
+        for header, channel in self.headers.items():
+            head_conv = nn.Conv2d(16, channel, kernel_size=1)
+            self.__setattr__(header, head_conv)
 
-        self.conv3x1_2 = nn.Conv2d(chann, chann, (3, 1), stride=1, padding=(
-            1*dilated, 0), bias=True, dilation=(dilated, 1))
+    def forward(self, input_, blocks):
+        x = blocks[-1]
 
-        self.conv1x3_2 = nn.Conv2d(chann, chann, (1, 3), stride=1, padding=(
-            0, 1*dilated), bias=True, dilation=(1, dilated))
+        x = self.up_conv1(x)
+        x = torch.cat([x, blocks[-2]], dim=1)
+        x = self.double_conv1(x)
 
-        self.bn2 = nn.BatchNorm2d(chann, eps=1e-03)
+        x = self.up_conv2(x)
+        x = torch.cat([x, blocks[-3]], dim=1)
+        x = self.double_conv2(x)
 
-        self.dropout = nn.Dropout2d(dropprob)
+        x = self.up_conv3(x)
+        x = torch.cat([x, blocks[-4]], dim=1)
+        x = self.double_conv3(x)
 
-    def forward(self, input):
+        x = self.up_conv4(x)
+        x = torch.cat([x, blocks[-5]], dim=1)
+        x = self.double_conv4(x)
 
-        output = self.conv3x1_1(input)
-        output = F.relu(output)
-        output = self.conv1x3_1(output)
-        output = self.bn1(output)
-        output = F.relu(output)
-
-        output = self.conv3x1_2(output)
-        output = F.relu(output)
-        output = self.conv1x3_2(output)
-        output = self.bn2(output)
-
-        if (self.dropout.p != 0):
-            output = self.dropout(output)
-
-        return F.relu(output+input)  # +input = identity (residual connection)
-
-
-class UpsamplerBlock (nn.Module):
-    def __init__(self, ninput, noutput):
-        super().__init__()
-        self.conv = nn.ConvTranspose2d(
-            ninput, noutput, 3, stride=2, padding=1, output_padding=1, bias=True)
-        self.bn = nn.BatchNorm2d(noutput, eps=1e-3)
-
-    def forward(self, input):
-        output = self.conv(input)
-        output = self.bn(output)
-        return F.relu(output)
-
-
-class Decoder (nn.Module):
-    def __init__(self, channels, heads):
-        super().__init__()
-
-        self.layers = nn.ModuleList()
-
-        self.layers.append(UpsamplerBlock(channels[0], channels[1]))
-        self.layers.append(non_bottleneck_1d(channels[1], 0, 1))
-        self.layers.append(non_bottleneck_1d(channels[1], 0, 1))
-
-        self.layers.append(UpsamplerBlock(channels[1], channels[2]))
-        self.layers.append(non_bottleneck_1d(channels[2], 0, 1))
-        self.layers.append(non_bottleneck_1d(channels[2], 0, 1))
-
-        self.layers.append(UpsamplerBlock(channels[2], channels[3]))
-        self.layers.append(non_bottleneck_1d(channels[3], 0, 1))
-        self.layers.append(non_bottleneck_1d(channels[3], 0, 1))
-
-        self.layers.append(UpsamplerBlock(channels[3], channels[4]))
-        self.layers.append(non_bottleneck_1d(channels[4], 0, 1))
-        self.layers.append(non_bottleneck_1d(channels[4], 0, 1))
-
-        self.heads = heads
-        for head, channel in heads.items():
-            output_conv = nn.ConvTranspose2d(
-                channels[4], channel, 2, stride=2, padding=0, output_padding=0, bias=True)
-            self.__setattr__(head, output_conv)
-
-    def forward(self, input):
-        output = input
-
-        for layer in self.layers:
-            output = layer(output)
+        if self.concat_input:
+            x = self.up_conv_input(x)
+            x = torch.cat([x, input_], dim=1)
+            x = self.double_conv_input(x)
 
         outs = []
-        for head in self.heads.keys():
-            output_conv = self.__getattr__(head)
-            outs.append(output_conv(output))
+        for header in self.headers.keys():
+            header_conv = self.__getattr__(header)
+            outs.append(header_conv(x))
 
         return tuple(outs)
 
@@ -629,7 +605,7 @@ class EfficientSeg(nn.Module):
             8: [640, 224, 80],
         }
 
-        self.kp_header = Decoder(channels[compound_coef], {"kp": 1, "ae": 4, "tan": 2})
+        self.kp_header = EfficientDecoder(channels[compound_coef], {"kp": 1, "ae": 4, "tan": 2})
 
     def freeze_bn(self):
         for m in self.modules():
@@ -637,16 +613,16 @@ class EfficientSeg(nn.Module):
                 m.eval()
 
     def forward(self, inputs):
-        _, _, p3, p4, p5 = self.backbone_net(inputs)
+        blocks = self.backbone_net(inputs)
 
-        features = (p3, p4, p5)
+        features = blocks[2:5]
         features = self.bifpn(features)
 
         regression = self.regressor(features)
         classification = self.classifier(features)
         anchors = self.anchors(inputs, inputs.dtype)
 
-        kp_out = self.kp_header(p5)
+        kp_out = self.kp_header(inputs, blocks)
         return kp_out, regression, classification, anchors
 
     def init_backbone(self, path):
