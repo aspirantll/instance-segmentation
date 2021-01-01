@@ -103,7 +103,7 @@ def load_rgb_image(img_path):
     return input_img
 
 
-def mask2poly(mask, threshold=0.5):
+def mask2poly(mask, threshold=1):
     """Takes a mask and returns a MultiPolygon
     Parameters
     ----------

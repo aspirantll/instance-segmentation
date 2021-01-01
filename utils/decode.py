@@ -13,7 +13,6 @@ import math
 import os
 from typing import Iterable
 
-from utils.kmeans import kmeans
 from utils.utils import BBoxTransform, ClipBoxes, generate_coordinates
 from utils import image
 import cv2
@@ -411,21 +410,42 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
     return dets
 
 
-def decode_single(kp_heat, ae_mat, boxes, info, transforms, decode_cfg, device):
-    hm_kp_mat = kp_heat[0]
+# def decode_single(kp_heat, ae_mat, boxes, info, transforms, decode_cfg, device):
+#     hm_kp_mat = kp_heat[0]
+#
+#     center_cls = boxes["class_ids"]
+#     if center_cls.shape[0] == 0:
+#         return ([],)
+#     lt = boxes["rois"][:, :2][:, ::-1]
+#     rb = boxes["rois"][:, 2:][:, ::-1]
+#     center_indexes = (lt+rb)/2
+#     center_confs = boxes["scores"]
+#     center_whs = rb - lt
+#
+#     # group the key points
+#     if decode_cfg.draw_flag:
+#         draw_box(center_whs, center_indexes, info, transforms)
+#     center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
+#                                                                 , center_indexes, center_cls, center_confs, info,
+#                                                                 decode_cfg, device)
+#
+#     return ([e for e in zip(center_cls, center_confs, center_indexes, groups)],)
 
-    center_cls = boxes["class_ids"]
-    if center_cls.shape[0] == 0:
-        return ([],)
-    lt = boxes["rois"][:, :2][:, ::-1]
-    rb = boxes["rois"][:, 2:][:, ::-1]
-    center_indexes = (lt+rb)/2
-    center_confs = boxes["scores"]
-    center_whs = rb - lt
+
+def decode_single(cls_mat, wh_mat, kp_mat, ae_mat, tan_mat, info, transforms, decode_cfg, device):
+    hm_kp_mat = kp_mat[0]
+
+    # handle the center point
+    max_conf_mat, max_cls_mat = cls_mat.max(0)
+    center_cls, center_indexes, center_confs, center_whs = decode_ct_hm(max_conf_mat, max_cls_mat, wh_mat,
+                                                                        cls_mat.shape[0], decode_cfg.cls_th,
+                                                                        transforms, info)
+    if decode_cfg.draw_flag:
+        img = cv2.imread(info.img_path)
+        draw_kp(img, center_indexes, transforms, decode_cfg.cls_th, info, "center")
+        draw_box(center_whs, center_indexes, info, transforms)
 
     # group the key points
-    if decode_cfg.draw_flag:
-        draw_box(center_whs, center_indexes, info, transforms)
     center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
                                                                 , center_indexes, center_cls, center_confs, info,
                                                                 decode_cfg, device)
@@ -444,10 +464,9 @@ def decode_output(inputs, outs, infos, transforms, decode_cfg, device):
     :return:
     """
     # get output
-    kp_out, regression, classification, anchors = outs
-    det_boxes = decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
+    cls_out, wh_out, kp_out, ae_out, tan_out = outs
 
-    dets = parell_util.multi_apply(decode_single, kp_out[0], kp_out[1], det_boxes, infos, transforms=transforms
+    dets = parell_util.multi_apply(decode_single, cls_out, wh_out, kp_out, ae_out, tan_out, infos, transforms=transforms
                                    , decode_cfg=decode_cfg, device=device)
 
     return dets[0]
