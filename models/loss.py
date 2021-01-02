@@ -286,7 +286,7 @@ class AELoss(object):
                 selected_emb = spatial_emb[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
                 dists = torch.exp(-1 * torch.sum(
                     torch.pow(selected_emb - centers_tensor, 2), 0))  # m x n
-                instance_loss += (1-dists[:, n_i]).sum()
+                instance_loss += (1-dists[:, n_i]).mean()
                 var_loss += nn.functional.l1_loss(dists[:, n_i], torch.max(dists, dim=1)[0], size_average=False)
 
             ae_loss += var_loss / max(n, 1) + instance_loss
