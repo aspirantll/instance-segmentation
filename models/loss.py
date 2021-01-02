@@ -9,7 +9,6 @@ __copyright__ = \
 __authors__ = ""
 __version__ = "1.0.0"
 
-import cv2
 import torch
 import torch.nn as nn
 import numpy as np

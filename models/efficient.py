@@ -82,21 +82,21 @@ class EfficientDecoder(nn.Module):
         self.headers = headers
         self.concat_input = concat_input
 
-        self.up_conv1 = up_conv(channels[0], 512)
-        self.double_conv1 = double_conv(channels[1]+512, 512)
-        self.up_conv2 = up_conv(512, 256)
-        self.double_conv2 = double_conv(channels[2]+256, 256)
-        self.up_conv3 = up_conv(256, 128)
-        self.double_conv3 = double_conv(channels[3]+128, 128)
-        self.up_conv4 = up_conv(128, 64)
-        self.double_conv4 = double_conv(channels[4]+64, 64)
+        self.up_conv1 = up_conv(channels[0], 256)
+        self.double_conv1 = double_conv(channels[1]+256, 256)
+        self.up_conv2 = up_conv(256, 128)
+        self.double_conv2 = double_conv(channels[2]+128, 128)
+        self.up_conv3 = up_conv(128, 64)
+        self.double_conv3 = double_conv(channels[3]+64, 64)
+        self.up_conv4 = up_conv(64, 32)
+        self.double_conv4 = double_conv(channels[4]+32, 32)
 
         if self.concat_input:
-            self.up_conv_input = up_conv(64, 32)
-            self.double_conv_input = double_conv(3+32, 32)
+            self.up_conv_input = up_conv(32, 16)
+            self.double_conv_input = double_conv(3+16, 16)
 
         for header, channel in self.headers.items():
-            head_conv = nn.Conv2d(32, channel, kernel_size=1)
+            head_conv = nn.Conv2d(16, channel, kernel_size=1)
             self.__setattr__(header, head_conv)
 
     def forward(self, input_, blocks):
