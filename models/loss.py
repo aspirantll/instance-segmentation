@@ -267,37 +267,26 @@ class AELoss(object):
         for b_i in range(b):
             centers = centers_list[b_i]
             polygons = polygons_list[b_i]
-            kp_mask = kp_mask_list[b_i]
             n = len(centers)
 
             if n <= 0:
                 continue
 
-            spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
-            sigma = torch.exp(ae[b_i, 2:4])  # n_sigma x h x w
+            spatial_emb = ae[b_i, 0:2] + xym_s  # 2 x h x w
 
             var_loss = zero_tensor(self._device)
             instance_loss = zero_tensor(self._device)
 
-            # control neg point
-            remote_point = torch.tensor([2, 2], dtype=torch.float32, device=self._device).view(2, 1, 1)
-            pred = 1-torch.exp(-1 * torch.sum(
-                torch.pow(spatial_emb - remote_point, 2) * sigma, 0, keepdim=True))
-
-            mask = 1-torch.from_numpy(kp_mask).to(self._device)
-            instance_loss += focal_loss(pred, mask)
-
             centers_np = np.vstack(centers)
             centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].unsqueeze(1)
-            centers_tensor = torch.cat((centers_tensor, remote_point), dim=2)
 
             for n_i in range(n):
                 kps = polygons[n_i]
                 # calculate the delta distance
                 selected_emb = spatial_emb[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
-                selected_sigma = sigma[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
                 dists = torch.exp(-1 * torch.sum(
-                    torch.pow(selected_emb - centers_tensor, 2) * selected_sigma, 0))  # m x n
+                    torch.pow(selected_emb - centers_tensor, 2), 0))  # m x n
+                instance_loss += (1-dists[:, n_i]).sum()
                 var_loss += nn.functional.l1_loss(dists[:, n_i], torch.max(dists, dim=1)[0], size_average=False)
 
             ae_loss += var_loss / max(n, 1) + instance_loss

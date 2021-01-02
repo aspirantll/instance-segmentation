@@ -451,8 +451,8 @@ class Anchors(nn.Module):
 
 
 def generate_coordinates():
-    xm = torch.linspace(0, 2, 2048).view(
+    xm = torch.linspace(0, 2048, 2048).view(
         1, 1, -1).expand(1, 1024, 2048)
-    ym = torch.linspace(0, 1, 1024).view(
+    ym = torch.linspace(0, 1024, 1024).view(
         1, -1, 1).expand(1, 1024, 2048)
     return torch.cat((ym, xm), 0)
