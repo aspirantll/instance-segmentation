@@ -161,7 +161,8 @@ class EfficientSeg(nn.Module):
             8: [640, 224, 80],
         }
 
-        self.decoder = EfficientDecoder(channels[compound_coef], {"cls": num_classes, "wh": 2, "kp": 1, "ae": 4, "tan": 2})
+        self.obj_header = EfficientDecoder(channels[compound_coef], {"cls": num_classes, "wh": 2})
+        self.ae_header = EfficientDecoder(channels[compound_coef], {"kp": 1, "ae": 4, "tan": 2})
 
     def freeze_bn(self):
         for m in self.modules():
@@ -170,7 +171,10 @@ class EfficientSeg(nn.Module):
 
     def forward(self, inputs):
         blocks = self.backbone_net(inputs)
-        return self.decoder(inputs, blocks)
+
+        cls_out, wh_out = self.obj_header(inputs, blocks)
+        kp_out, ae_out, tan_out = self.ae_header(inputs, blocks)
+        return cls_out, wh_out, kp_out, ae_out, tan_out
 
     def init_backbone(self, path):
         state_dict = torch.load(path)
