@@ -289,7 +289,7 @@ class AELoss(object):
                 instance_loss += (1-dists[:, n_i]).mean()
                 var_loss += nn.functional.l1_loss(dists[:, n_i], torch.max(dists, dim=1)[0], size_average=False)
 
-            ae_loss += var_loss / max(n, 1) + instance_loss
+            ae_loss += (var_loss+instance_loss) / max(n, 1)
 
         # compute mean loss
         return self._weight * ae_loss / b
