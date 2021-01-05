@@ -259,7 +259,7 @@ class AELoss(object):
         """
         # prepare step
         b, c, h, w = ae.shape
-        centers_list, polygons_list, kp_mask_list = targets
+        centers_list, polygons_list = targets
 
         xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
 
@@ -273,6 +273,7 @@ class AELoss(object):
                 continue
 
             spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
+            sigma = torch.exp(ae[b_i, 2:4])  # n_sigma x h x w
 
             var_loss = zero_tensor(self._device)
             instance_loss = zero_tensor(self._device)
@@ -281,15 +282,36 @@ class AELoss(object):
             centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].unsqueeze(1)
 
             for n_i in range(n):
-                kps = polygons[n_i]
+                center, kps = centers[n_i].astype(np.int32), polygons[n_i]
+
+                # compute current obj mask
+                mask_size = ((kps.max(0) - kps.min(0)) * 1.5).astype(np.int32)
+                lt = np.clip(center - mask_size // 2, a_min=0, a_max=2048)
+                rb = center + mask_size // 2
+                rb[0] = np.clip(rb[0], a_min=0, a_max=h)
+                rb[1] = np.clip(rb[1], a_min=0, a_max=w)
+                o_h, o_w = tuple(rb-lt)
+
+                # calculate gaussian
+                center_s = xym_s[:, center[0], center[1]].view(2, 1, 1)
+                selected_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
+                selected_sigma = sigma[:, lt[0]:rb[0], lt[1]:rb[1]]
+                pred = torch.exp(-1 * torch.sum(
+                    torch.pow(selected_emb - center_s, 2) * selected_sigma, 0, keepdim=True))
+
+                mask = torch.from_numpy(generate_kp_mask(kps, (o_h, o_w))).view(1, o_h, o_w).to(self._device)
+                instance_loss += focal_loss(pred, mask)
+                del pred
+
                 # calculate the delta distance
                 selected_emb = spatial_emb[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
+                selected_sigma = sigma[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
                 dists = torch.exp(-1 * torch.sum(
-                    torch.pow(selected_emb - centers_tensor, 2), 0))  # m x n
-                instance_loss += (1-dists[:, n_i]).sum()
+                    torch.pow(selected_emb - centers_tensor, 2) * selected_sigma, 0))  # m x n
                 var_loss += nn.functional.l1_loss(dists[:, n_i], torch.max(dists, dim=1)[0], size_average=False)
+                del dists
 
-            ae_loss += (var_loss+instance_loss) / max(n, 1)
+            ae_loss += (var_loss + instance_loss) / max(n, 1)
 
         # compute mean loss
         return self._weight * ae_loss / b

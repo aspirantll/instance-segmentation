@@ -146,10 +146,15 @@ def load_state_dict(model, save_dir, pretrained):
             if file.startswith("efficient_weights_") and file.endswith(".pth"):
                 weight_path = os.path.join(save_dir, file)
                 checkpoint = torch.load(weight_path, map_location=device_type)
-                model.load_state_dict(checkpoint["state_dict"])
+                try:
+                    ret = model.load_state_dict(checkpoint["state_dict"], strict=False)
+                    print(ret)
+                except RuntimeError as e:
+                    print('Ignoring ' + str(e) + '"')
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
                 best_ap = checkpoint["best_ap"] if "best_ap" in checkpoint else 0
+                save_checkpoint(model.state_dict(), -1, 0, data_cfg.save_dir)
                 return start_epoch+1, best_ap
     # model.init_weight()
     save_checkpoint(model.state_dict(), -1, 0, data_cfg.save_dir)

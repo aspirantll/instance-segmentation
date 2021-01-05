@@ -312,7 +312,7 @@ def generate_all_annotations(target_size, targets):
     kp_annotations = (instance_mask >= 0).astype(np.float32)
 
     centers_list = [[(box[0]+box[1])[::-1]/2 for box in boxes] for boxes in boxes_list]
-    ae_annotations = (centers_list, dense_polygons_list, kp_annotations)
+    ae_annotations = (centers_list, dense_polygons_list)
     tan_annotations = (dense_polygons_list, normal_vector_list)
 
     return det_annotations, kp_annotations, ae_annotations, tan_annotations
