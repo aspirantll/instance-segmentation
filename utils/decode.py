@@ -312,13 +312,19 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     correspond_index = kp_mask.nonzero()
     selected_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()
     active_ae = selected_ae[:, 0:2].unsqueeze(1)
-
+    active_sigma = torch.exp(selected_ae[:, 2:4]).unsqueeze(1)
     centers_np = np.vstack(center_indexes)
     centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].t().unsqueeze(0)
 
+    center_indexes_tensor = torch.from_numpy(centers_np).to(device)
+    wh_tensor = torch.from_numpy(np.vstack(center_whs)).to(device)
+    lt_tensor = (center_indexes_tensor-wh_tensor/2).unsqueeze(0)
+    rb_tensor = (center_indexes_tensor+wh_tensor/2).unsqueeze(0)
+    mask = lt_tensor <= correspond_index.unsqueeze(1) <= rb_tensor
+
     dists = torch.exp(-1 * torch.sum(
-        torch.pow(active_ae - centers_tensor, 2), 2))
-    scores, correspond_vec = dists.max(1)
+        torch.pow(active_ae - centers_tensor, 2) * active_sigma, 2))
+    scores, correspond_vec = (dists*mask.float()).max(1)
 
     # center pixel locations
     n_centers = []
