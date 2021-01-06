@@ -299,7 +299,7 @@ class AELoss(object):
                 pred = torch.exp(-1 * torch.sum(
                     torch.pow(selected_emb - center_s, 2) * selected_sigma, 0, keepdim=True))
 
-                mask = torch.from_numpy(generate_kp_mask(kps, (o_h, o_w))).view(1, o_h, o_w).to(self._device)
+                mask = torch.from_numpy(generate_kp_mask(kps-lt, (o_h, o_w))).view(1, o_h, o_w).to(self._device)
                 instance_loss += focal_loss(pred, mask)
                 del pred
 
