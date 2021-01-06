@@ -320,8 +320,9 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     wh_tensor = torch.from_numpy(np.vstack(center_whs)).to(device)
     lt_tensor = (center_indexes_tensor-wh_tensor/2).unsqueeze(0)
     rb_tensor = (center_indexes_tensor+wh_tensor/2).unsqueeze(0)
-    mask = lt_tensor <= correspond_index.unsqueeze(1) <= rb_tensor
+    kp_tensor = correspond_index.float().unsqueeze(1)
 
+    mask = (kp_tensor-lt_tensor >= 0).all(dim=2)*(rb_tensor-kp_tensor >= 0).all(dim=2)
     dists = torch.exp(-1 * torch.sum(
         torch.pow(active_ae - centers_tensor, 2) * active_sigma, 2))
     scores, correspond_vec = (dists*mask.float()).max(1)
