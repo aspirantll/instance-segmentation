@@ -285,7 +285,7 @@ class AELoss(object):
                 center, kps = centers[n_i].astype(np.int32), polygons[n_i]
 
                 # compute current obj mask
-                mask_size = ((kps.max(0) - kps.min(0)) * 1.5).astype(np.int32)
+                mask_size = ((kps.max(0) - kps.min(0)) * 2).astype(np.int32)
                 lt = np.clip(center - mask_size // 2, a_min=0, a_max=2048)
                 rb = center + mask_size // 2
                 rb[0] = np.clip(rb[0], a_min=0, a_max=h)
