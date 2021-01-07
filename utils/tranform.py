@@ -126,16 +126,12 @@ class Compose(object):
 class CommonTransforms(object):
     def __init__(self, trans_cfg, split="train"):
         self.configer = trans_cfg
-        self.aug_trans = cv2_aug_transforms.CV2AugCompose(trans_cfg, split)
         self.img_transform = Compose([
             ToTensor(),
             Normalize(div_value=self.configer.get('normalize', 'div_value'),
                             mean=self.configer.get('normalize', 'mean'),
                             std=self.configer.get('normalize', 'std')), ]
         )
-        self.label_transform = Compose([
-            CoordinateReverser()
-        ])
 
     def __call__(self, img, label=None, img_path=None):
         """
@@ -146,33 +142,5 @@ class CommonTransforms(object):
         :return:
         """
         img_size = img.shape[:2]
-        img, label = self.aug_trans(img, label=label)
-
         input_tensor = self.img_transform(img)
-        if label is not None:
-            label = self.label_transform(label)
-
         return input_tensor, label, TransInfo(img_path, img_size)
-
-    def detransform_pixel(self, pixels, info):
-        pixels = pixels.reshape(-1, 2)
-        reversed_pixels = pixels[:, ::-1]
-        img_size = info.img_size
-
-        if 'resize' in self.configer.get('val_trans', 'trans_seq'):
-            if 'target_size' in self.configer.get('val_trans', 'resize'):
-                scale = self.configer.get('val_trans', 'resize')['target_size']
-                w_scale_ratio, h_scale_ratio = 1 / scale, 1 / scale
-                height, width = img_size
-                target_size = (int(round(width * w_scale_ratio)), int(round(height * h_scale_ratio)))
-                transform_matrix = image.get_affine_transform(img_size[::-1], target_size, inv=True)
-                reversed_pixels = image.apply_affine_transform(reversed_pixels, transform_matrix, img_size[::-1])
-
-        return reversed_pixels
-
-    def tensor_to_image(self, tensor):
-        denormalized_tensor = DeNormalize(div_value=self.configer.get('normalize', 'div_value'),
-                                          mean=self.configer.get('normalize', 'mean'),
-                                          std=self.configer.get('normalize', 'std'))(tensor)
-        rgb_img = denormalized_tensor.numpy().transpose(1, 2, 0)
-        return cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)

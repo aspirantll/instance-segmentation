@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from models.lovasz_losses import lovasz_hinge
 from utils.target_generator import generate_all_annotations, generate_kp_mask
 from utils.utils import BBoxTransform, ClipBoxes, postprocess, display, generate_coordinates
 
@@ -254,67 +255,70 @@ class AELoss(object):
     def __call__(self, ae, targets):
         """
         :param ae:
-        :param targets: (cls_ids, centers,polygons)
+        :param targets: (instance_map_list)
         :return:
         """
         # prepare step
+        det_annotations, instance_ids_list, instance_map_list = targets
         b, c, h, w = ae.shape
-        centers_list, polygons_list = targets
 
         xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
 
         ae_loss = zero_tensor(self._device)
         for b_i in range(b):
-            centers = centers_list[b_i]
-            polygons = polygons_list[b_i]
-            n = len(centers)
+            instance_ids = instance_ids_list[b_i]
+            instance_map = instance_map_list[b_i]
 
+            n = len(instance_ids)
             if n <= 0:
                 continue
 
             spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
-            sigma = torch.exp(ae[b_i, 2:4])  # n_sigma x h x w
+            sigma = ae[b_i, 2:3]  # n_sigma x h x w
 
             var_loss = zero_tensor(self._device)
             instance_loss = zero_tensor(self._device)
 
-            centers_np = np.vstack(centers)
-            centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].unsqueeze(1)
+            for o_j, instance_id in enumerate(instance_ids):
+                in_mask = instance_map.eq(instance_id).view(1, h, w) # 1 x h x w
 
-            for n_i in range(n):
-                center, kps = centers[n_i].astype(np.int32), polygons[n_i]
+                # calculate center of attraction
+                xy_in = xym_s[in_mask.expand_as(xym_s)].view(2, -1)
+                center = xy_in.mean(1).view(2, 1, 1)  # 2 x 1 x 1
 
-                # compute current obj mask
-                mask_size = ((kps.max(0) - kps.min(0)) * 2).astype(np.int32)
-                lt = np.clip(center - mask_size // 2, a_min=0, a_max=2048)
-                rb = center + mask_size // 2
+                # calculate sigma
+                sigma_in = sigma[in_mask.expand_as(sigma)].view(1, -1)
+
+                s = sigma_in.mean(1).view(1, 1, 1)  # n_sigma x 1 x 1
+
+                # calculate var loss before exp
+                var_loss = var_loss + \
+                           torch.mean(
+                               torch.pow(sigma_in - s.detach(), 2))
+
+                s = torch.exp(s * 10)
+
+                # limit 2*box_size mask
+                lt, rb = det_annotations[b_i, o_j, 1::-1], det_annotations[b_i, o_j, 3:1:-1]
+                delta = (rb - lt) / 2
+                lt = np.clip((lt - delta).astype(np.int32), a_min=0, a_max=2048)
+                rb = (rb + delta).astype(np.int32)
                 rb[0] = np.clip(rb[0], a_min=0, a_max=h)
                 rb[1] = np.clip(rb[1], a_min=0, a_max=w)
-                o_h, o_w = tuple(rb-lt)
-
+                selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
+                label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
                 # calculate gaussian
-                center_s = xym_s[:, center[0], center[1]].view(2, 1, 1)
-                selected_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
-                selected_sigma = sigma[:, lt[0]:rb[0], lt[1]:rb[1]]
-                pred = torch.exp(-1 * torch.sum(
-                    torch.pow(selected_emb - center_s, 2) * selected_sigma, 0, keepdim=True))
+                dist = torch.exp(-1 * torch.sum(
+                    torch.pow(selected_spatial_emb - center, 2) * s, 0, keepdim=True))
 
-                mask = torch.from_numpy(generate_kp_mask(kps-lt, (o_h, o_w))).view(1, o_h, o_w).to(self._device)
-                instance_loss += focal_loss(pred, mask)
-                del pred
-
-                # calculate the delta distance
-                selected_emb = spatial_emb[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
-                selected_sigma = sigma[:, kps[:, 0], kps[:, 1]].unsqueeze(2)
-                dists = torch.exp(-1 * torch.sum(
-                    torch.pow(selected_emb - centers_tensor, 2) * selected_sigma, 0))  # m x n
-                var_loss += nn.functional.l1_loss(dists[:, n_i], torch.max(dists, dim=1)[0], size_average=False)
-                del dists
+                # apply lovasz-hinge loss
+                instance_loss = instance_loss + \
+                                lovasz_hinge(dist * 2 - 1, label_mask)
 
             ae_loss += (var_loss + instance_loss) / max(n, 1)
 
         # compute mean loss
-        return self._weight * ae_loss / b
+        return ae_loss / b
 
 
 class TangentLoss(object):
@@ -355,24 +359,19 @@ class ComposeLoss(nn.Module):
     def __init__(self, device):
         super(ComposeLoss, self).__init__()
         self._device = device
-        self._loss_names = ["cls_loss", "wh_loss", "kp_loss", "ae_loss", "tan_loss", "total_loss"]
+        self._loss_names = ["cls_loss", "wh_loss", "ae_loss", "total_loss"]
         self.det_focal_loss = DetFocalLoss()
-        self.kp_loss = KPFocalLoss(device)
         self.ae_loss = AELoss(device)
-        self.tan_loss = TangentLoss(device)
 
     def forward(self, outputs, targets):
         # unpack the output
         kp_out, regression, classification, anchors = outputs
-        det_annotations, kp_annotations, ae_annotations, tan_annotations = generate_all_annotations(kp_out[0].shape,
-                                                                                                    targets)
+        det_annotations, instance_ids_list, instance_map_list = generate_all_annotations(kp_out[0].shape, targets, self._device)
 
         losses = []
         losses.extend(self.det_focal_loss(classification, regression, anchors,
                                           torch.from_numpy(det_annotations).to(self._device)))
-        losses.append(self.kp_loss(kp_out[0], kp_annotations))
-        losses.append(self.ae_loss(kp_out[1], ae_annotations))
-        losses.append(self.tan_loss(kp_out[2], tan_annotations))
+        losses.append(self.ae_loss(kp_out[0], (det_annotations, instance_ids_list, instance_map_list)))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()
