@@ -103,6 +103,12 @@ def load_rgb_image(img_path):
     return input_img
 
 
+def load_instance_image(img_path):
+    from PIL import Image
+    img = Image.open(img_path)
+    return np.array(img, copy=False)
+
+
 def mask2poly(mask, threshold=0.5):
     """Takes a mask and returns a MultiPolygon
     Parameters

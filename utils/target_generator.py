@@ -13,6 +13,7 @@ __version__ = "1.0.0"
 
 import numpy as np
 import cv2
+import torch
 
 
 def gaussian_radius(det_size, min_overlap=0.8):
@@ -289,31 +290,37 @@ def generate_instance_ids(polygons_list, h, w):
     return instance_img_list
 
 
-def generate_all_annotations(target_size, targets):
-    cls_ids_list, polygons_list = targets
-
-    boxes_list = [[(polygon.min(0)[::-1], polygon.max(0)[::-1]) for polygon in polygons] for polygons in polygons_list]
-
+def generate_all_annotations(target_size, targets, device):
     b, c, h, w = target_size
-    max_num = max(len(cls_ids) for cls_ids in cls_ids_list)
-    det_annotations = np.ones((b, max_num, 5), dtype=np.float32) * -1
-
+    class_map_list, instance_map_list = [], []
+    instance_ids_list = []
+    max_instance_num = 0
     for b_i in range(b):
-        cls_ids = cls_ids_list[b_i]
-        boxes = boxes_list[b_i]
-        for o_j in range(len(cls_ids)):
-            det_annotations[b_i, o_j, :2] = boxes[o_j][0]
-            det_annotations[b_i, o_j, 2:4] = boxes[o_j][1]
-            det_annotations[b_i, o_j, 4] = cls_ids[o_j]
+        class_tensor = torch.from_numpy(targets[0][b_i]).to(device)
+        instance_tensor = torch.from_numpy(targets[1][b_i]).to(device)
 
-    dense_polygons_list, normal_vector_list = dense_sample_polygon(polygons_list, h, w)
+        instance_ids = instance_tensor.unique()
+        instance_ids = instance_ids[instance_ids != 0].cpu().numpy()
 
-    instance_mask = generate_instance_mask((b, 1, h, w), dense_polygons_list)
-    kp_annotations = (instance_mask >= 0).astype(np.float32)
+        max_instance_num = max(max_instance_num, len(instance_ids))
 
-    centers_list = [[(box[0]+box[1])[::-1]/2 for box in boxes] for boxes in boxes_list]
-    ae_annotations = (centers_list, dense_polygons_list)
-    tan_annotations = (dense_polygons_list, normal_vector_list)
+        class_map_list.append(class_tensor)
+        instance_map_list.append(instance_tensor)
+        instance_ids_list.append(instance_ids)
 
-    return det_annotations, kp_annotations, ae_annotations, tan_annotations
+    det_annotations = np.ones((b, max_instance_num, 5), dtype=np.float32) * -1
+    for b_i in range(b):
+        class_map = class_map_list[b_i]
+        instance_map = instance_map_list[b_i]
+        instance_ids = instance_ids_list[b_i]
+        for o_j, instance_id in enumerate(instance_ids):
+            mask = instance_map == instance_id
+            labels = class_map[mask].unique().cpu()
+            assert len(labels) == 1
+            instance_points = mask.nonzero()
+            det_annotations[b_i, o_j, 0:2] = instance_points.min(0)[0].cpu().numpy()
+            det_annotations[b_i, o_j, 2:4] = instance_points.max(0)[0].cpu().numpy()
+            det_annotations[b_i, o_j, 4] = labels[0]-1
+
+    return det_annotations, instance_ids_list, instance_map_list
 
