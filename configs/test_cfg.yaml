@@ -1,7 +1,7 @@
 data:
   test_dir: /media/liulei/Data/cityscapes/leftImg8bit/val
   test_image:
-  save_dir: /media/liulei/Data/checkpoints/efficient/test
+  save_dir: /media/liulei/Data/checkpoints/mask/test
   dataset: dir
   batch_size: 1
   input_size: (512, 1024)
@@ -9,6 +9,6 @@ data:
 
 seed: 1
 compound_coef: 3
-weights_path: /media/liulei/Data/checkpoints/efficient/efficient_weights_00000027.pth
+weights_path: /media/liulei/Data/checkpoints/mask/efficient_weights_00000007.pth
 decode_cfg_path: ./configs/decode_cfg.yaml
 trans_cfg_path: ./configs/trans_cfg.json

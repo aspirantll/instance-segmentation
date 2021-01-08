@@ -104,9 +104,7 @@ def load_rgb_image(img_path):
 
 
 def load_instance_image(img_path):
-    from PIL import Image
-    img = Image.open(img_path)
-    return np.array(img, copy=False)
+    return cv2.imread(img_path, cv2.IMREAD_ANYDEPTH)
 
 
 def mask2poly(mask, threshold=0.5):

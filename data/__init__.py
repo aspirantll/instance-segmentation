@@ -64,7 +64,7 @@ def collate_fn_without_label(batch):
     return input_tensors, trans_infos
 
 
-def get_dataloader(batch_size, dataset_type, data_dir, phase, transforms=None, num_workers=0, random=True, with_label=True):
+def get_dataloader(batch_size, dataset_type, data_dir, phase, transforms=None, num_workers=0, random=False, with_label=True):
     """
     initialize the data loader, and then return a data loader
     :param num_workers: worker num
