@@ -15,8 +15,8 @@ import torch.nn as nn
 import numpy as np
 
 from models.lovasz_losses import lovasz_hinge
-from utils.target_generator import generate_all_annotations, generate_kp_mask
-from utils.utils import BBoxTransform, ClipBoxes, postprocess, display, generate_coordinates
+from utils.target_generator import generate_all_annotations
+from utils.utils import BBoxTransform, ClipBoxes, postprocess, display, generate_coordinates, convert_corner_to_corner
 
 
 def calc_iou(a, b):
@@ -283,13 +283,13 @@ class AELoss(object):
                 in_mask = instance_map.eq(instance_id).view(1, h, w) # 1 x h x w
 
                 # calculate center of attraction
-                xy_in = xym_s[in_mask.expand_as(xym_s)].view(2, -1)
-                center = xy_in.mean(1).view(2, 1, 1)  # 2 x 1 x 1
+                o_lt = det_annotations[b_i, o_j, 1::-1].astype(np.int32)
+                o_rb = det_annotations[b_i, o_j, 3:1:-1].astype(np.int32)
 
                 # calculate sigma
-                sigma_in = sigma[in_mask.expand_as(sigma)].view(1, -1)
+                sigma_in = sigma[:, o_lt[0]:o_rb[0], o_lt[1]:o_rb[1]]
 
-                s = sigma_in.mean(1).view(1, 1, 1)  # n_sigma x 1 x 1
+                s = sigma_in.mean().view(1, 1, 1)  # n_sigma x 1 x 1
 
                 # calculate var loss before exp
                 var_loss = var_loss + \
@@ -299,14 +299,11 @@ class AELoss(object):
                 s = torch.exp(s * 10)
 
                 # limit 2*box_size mask
-                lt, rb = det_annotations[b_i, o_j, 1::-1], det_annotations[b_i, o_j, 3:1:-1]
-                delta = (rb - lt) / 2
-                lt = np.clip((lt - delta).astype(np.int32), a_min=0, a_max=2048)
-                rb = (rb + delta).astype(np.int32)
-                rb[0] = np.clip(rb[0], a_min=0, a_max=h)
-                rb[1] = np.clip(rb[1], a_min=0, a_max=w)
+                lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 2)
                 selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
                 label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
+                center_index = ((o_lt+o_rb)/2).astype(np.int32)
+                center = xym_s[:, center_index[0], center_index[1]].view(2,1,1)
                 # calculate gaussian
                 dist = torch.exp(-1 * torch.sum(
                     torch.pow(selected_spatial_emb - center, 2) * s, 0, keepdim=True))

@@ -456,3 +456,18 @@ def generate_coordinates():
     ym = torch.linspace(0, 1, 1024).view(
         1, -1, 1).expand(1, 1024, 2048)
     return torch.cat((ym, xm), 0)
+
+
+def generate_corner(center, wh, max_h, max_w, delta_factor):
+    delta = (wh / 2)*delta_factor
+    lt = np.clip((center - delta).astype(np.int32), a_min=0, a_max=max(max_h, max_w))
+    rb = (center + delta).astype(np.int32)
+    rb[0] = np.clip(rb[0], a_min=0, a_max=max_h)
+    rb[1] = np.clip(rb[1], a_min=0, a_max=max_w)
+    return lt, rb
+
+
+def convert_corner_to_corner(o_lt, o_rb, max_h, max_w, delta_factor):
+    center = (o_lt+o_rb)/2
+    wh = o_rb - o_lt
+    return generate_corner(center, wh, max_h, max_w, delta_factor)

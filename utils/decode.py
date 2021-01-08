@@ -13,8 +13,7 @@ import math
 import os
 from typing import Iterable
 
-from utils.kmeans import kmeans
-from utils.utils import BBoxTransform, ClipBoxes, generate_coordinates
+from utils.utils import BBoxTransform, ClipBoxes, generate_coordinates, generate_corner
 from utils import image
 import cv2
 import torch
@@ -225,9 +224,6 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
 
 
 def draw_box(box_sizes, centers, trans_info, transforms):
-    centers = [transforms.detransform_pixel(center, trans_info)[0] for center in centers]
-    box_sizes = [box_size[::-1] * compute_scale(trans_info) for box_size in box_sizes]
-
     img = cv2.imread(trans_info.img_path)
     img = visualize_box(img, centers, box_sizes, mask=True)
     cv2.imwrite(
@@ -285,7 +281,7 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
     return keep_center_cls, keep_center_indexes, keep_center_confs, keep_center_whs
 
 
-def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, center_confs, info, decode_cfg, device):
+def group_instance_map(hm_ae, center_whs, center_indexes, device):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -295,83 +291,25 @@ def group_kp(hm_kp, hm_ae, transforms, center_whs, center_indexes, center_cls, c
     :return: the groups
     """
     objs_num = len(center_indexes)
-    # handle key point
-    kp_mask = select_points(hm_kp, decode_cfg.kp_th)
-    if objs_num == 0 or kp_mask.sum() == 0:
-        return [], [], [], []
-
-    h, w = hm_kp.shape
+    h, w = hm_ae.shape[1:]
     xym_s = xym[:, 0:h, 0:w].contiguous().to(device)
-    hm_ae[0:2, :, :] = torch.tanh(hm_ae[0:2, :, :]) + xym_s
+    spatial_emb = torch.tanh(hm_ae[0:2, :, :]) + xym_s
+    sigma = hm_ae[2:3, :, :]
 
-    # generate the centers
-    if decode_cfg.draw_flag:
-        draw_kp_mask(kp_mask, transforms, decode_cfg.kp_th, info, "bound")
-
-    # clear the non-active part
-    correspond_index = kp_mask.nonzero()
-    selected_ae = hm_ae.masked_select(kp_mask.byte()).reshape(hm_ae.shape[0], -1).t()
-    active_ae = selected_ae[:, 0:2].unsqueeze(1)
-    active_sigma = torch.exp(selected_ae[:, 2:4]).unsqueeze(1)
-    centers_np = np.vstack(center_indexes)
-    centers_tensor = xym_s[:, centers_np[:, 0], centers_np[:, 1]].t().unsqueeze(0)
-
-    center_indexes_tensor = torch.from_numpy(centers_np).to(device)
-    wh_tensor = torch.from_numpy(np.vstack(center_whs)).to(device)
-    lt_tensor = (center_indexes_tensor-wh_tensor/2).unsqueeze(0)
-    rb_tensor = (center_indexes_tensor+wh_tensor/2).unsqueeze(0)
-    kp_tensor = correspond_index.float().unsqueeze(1)
-
-    mask = (kp_tensor-lt_tensor >= 0).all(dim=2)*(rb_tensor-kp_tensor >= 0).all(dim=2)
-    dists = torch.exp(-1 * torch.sum(
-        torch.pow(active_ae - centers_tensor, 2) * active_sigma, 2))
-    scores, correspond_vec = (dists*mask.float()).max(1)
-
-    # center pixel locations
-    n_centers = []
-    kps = []
-    n_clss = []
-    n_confs = []
-    img = cv2.imread(info.img_path)
-    color = [int(e) for e in np.random.random_integers(0, 256, 3)]
+    instance_map = torch.zeros(h, w).byte().to(device)
     for i in range(objs_num):
-        # filter the boxes
-        h, w = tuple(center_whs[i] * compute_scale(info))
+        center_index = center_indexes[i].astype(np.int32)
+        center = xym_s[:, center_index[0], center_index[1]].view(2, 1, 1)
+        o_wh = center_whs[i]
+        lt, rb = generate_corner(center_index, o_wh, h, w, 1.5)
+        selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
+        s = torch.exp(sigma[:, center_index[0], center_index[1]]*10)
+        dist = torch.exp(-1 * torch.sum(torch.pow(selected_spatial_emb -
+                                                  center, 2) * s, 0, keepdim=True))
 
-        # get the points for center
-        kp_pixels = correspond_index[to_numpy((correspond_vec == i).nonzero())[:, 0], :]
-        true_pixels = to_numpy(kp_pixels.float())
-        # transform to origin image pixel
-        true_pixels = transforms.detransform_pixel(true_pixels, info)
-
-        center_loc = center_indexes[i]
-        center_loc = transforms.detransform_pixel(center_loc, info)[0]
-        x, y = center_loc[0], center_loc[1]
-        # filter the ghost point
-        x_mask = (x - (0.5 + decode_cfg.wh_delta) * w < true_pixels[:, 0]) * (true_pixels[:, 0] < x + (0.5 + decode_cfg.wh_delta) * w)
-        y_mask = (y - (0.5 + decode_cfg.wh_delta) * h < true_pixels[:, 1]) * (true_pixels[:, 1] < y + (0.5 + decode_cfg.wh_delta) * h)
-        filter_mask = x_mask * y_mask
-        # filter_mask = np.ones(kp_pixels.shape[0], dtype=np.bool)
-        if filter_mask.sum() < decode_cfg.obj_pixel_th:
-            continue
-
-        # augment the groups
-        np_poly = aug_group(true_pixels[filter_mask], center_loc)
-
-        if np_poly is not None:
-            if decode_cfg.draw_flag:
-                img = draw_candid(np_poly, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)),
-                            img, (color[0] * (i+1) % 256, color[1] * (i+1) % 256, color[2] * (i+1) % 256))
-            # put to groups
-            kps.append(np_poly)
-            n_centers.append(center_loc)
-            n_clss.append(center_cls[i])
-            n_confs.append(center_confs[i])
-    if decode_cfg.draw_flag:
-        cv2.imwrite(
-            r'{}/{}_{}.png'.format(base_dir, os.path.basename(info.img_path), "candid"),
-            img)
-    return n_clss, n_confs, n_centers, kps
+        proposal = (dist > 0.5).squeeze()
+        instance_map[lt[0]:rb[0], lt[1]:rb[1]][proposal] = i+1
+    return instance_map.cpu().numpy()
 
 
 def decode_boxes(x, anchors, regression, classification, threshold, iou_threshold):
@@ -419,9 +357,7 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
     return dets
 
 
-def decode_single(kp_heat, ae_mat, boxes, info, transforms, decode_cfg, device):
-    hm_kp_mat = kp_heat[0]
-
+def decode_single(ae_mat, boxes, info, transforms, decode_cfg, device):
     center_cls = boxes["class_ids"]
     if center_cls.shape[0] == 0:
         return ([],)
@@ -434,11 +370,10 @@ def decode_single(kp_heat, ae_mat, boxes, info, transforms, decode_cfg, device):
     # group the key points
     if decode_cfg.draw_flag:
         draw_box(center_whs, center_indexes, info, transforms)
-    center_cls, center_confs, center_indexes, groups = group_kp(hm_kp_mat, ae_mat, transforms, center_whs
-                                                                , center_indexes, center_cls, center_confs, info,
-                                                                decode_cfg, device)
-
-    return ([e for e in zip(center_cls, center_confs, center_indexes, groups)],)
+    instance_map = group_instance_map(ae_mat, center_whs, center_indexes, device)
+    cv2.imshow("instance mask", instance_map.astype(np.uint16)*1000)
+    cv2.waitKey()
+    return ([e for e in zip(center_cls, center_confs, center_indexes)], instance_map)
 
 
 def decode_output(inputs, outs, infos, transforms, decode_cfg, device):
@@ -455,7 +390,7 @@ def decode_output(inputs, outs, infos, transforms, decode_cfg, device):
     kp_out, regression, classification, anchors = outs
     det_boxes = decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
 
-    dets = parell_util.multi_apply(decode_single, kp_out[0], kp_out[1], det_boxes, infos, transforms=transforms
+    dets = parell_util.multi_apply(decode_single, kp_out[0], det_boxes, infos, transforms=transforms
                                    , decode_cfg=decode_cfg, device=device)
 
     return dets[0]
