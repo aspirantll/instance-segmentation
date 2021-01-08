@@ -296,10 +296,10 @@ class AELoss(object):
                            torch.mean(
                                torch.pow(sigma_in - s.detach(), 2))
 
-                s = torch.exp(s * 10)
+                s = torch.exp(s)
 
                 # limit 2*box_size mask
-                lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 2)
+                lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)
                 selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
                 label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
                 center_index = ((o_lt+o_rb)/2).astype(np.int32)

@@ -301,7 +301,7 @@ def group_instance_map(hm_ae, center_whs, center_indexes, device):
         center_index = center_indexes[i].astype(np.int32)
         center = xym_s[:, center_index[0], center_index[1]].view(2, 1, 1)
         o_wh = center_whs[i]
-        lt, rb = generate_corner(center_index, o_wh, h, w, 1.5)
+        lt, rb = generate_corner(center_index, o_wh, h, w, 1.2)
         selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
         s = torch.exp(sigma[:, center_index[0], center_index[1]]*10)
         dist = torch.exp(-1 * torch.sum(torch.pow(selected_spatial_emb -
