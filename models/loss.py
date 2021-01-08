@@ -283,8 +283,8 @@ class AELoss(object):
                 in_mask = instance_map.eq(instance_id).view(1, h, w) # 1 x h x w
 
                 # calculate center of attraction
-                o_lt = det_annotations[b_i, o_j, 1::-1].astype(np.int32)
-                o_rb = det_annotations[b_i, o_j, 3:1:-1].astype(np.int32)
+                o_lt = det_annotations[b_i, o_j, 0:2][::-1].astype(np.int32)
+                o_rb = det_annotations[b_i, o_j, 2:4][::-1].astype(np.int32)
 
                 # calculate sigma
                 sigma_in = sigma[:, o_lt[0]:o_rb[0], o_lt[1]:o_rb[1]]
