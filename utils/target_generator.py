@@ -318,8 +318,8 @@ def generate_all_annotations(target_size, targets, device):
             labels = class_map[mask].unique().cpu()
             assert len(labels) == 1
             instance_points = mask.nonzero()
-            det_annotations[b_i, o_j, 0:2] = instance_points.min(0)[0].cpu().numpy()
-            det_annotations[b_i, o_j, 2:4] = instance_points.max(0)[0].cpu().numpy()
+            det_annotations[b_i, o_j, 0:2] = instance_points.min(0)[0].cpu().numpy()[::-1]
+            det_annotations[b_i, o_j, 2:4] = instance_points.max(0)[0].cpu().numpy()[::-1]
             det_annotations[b_i, o_j, 4] = labels[0]-1
 
     return det_annotations, instance_ids_list, instance_map_list
