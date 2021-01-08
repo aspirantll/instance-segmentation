@@ -295,6 +295,7 @@ class AELoss(object):
                 var_loss = var_loss + \
                            torch.mean(
                                torch.pow(sigma_in - s.detach(), 2))
+                assert not torch.isnan(var_loss)
 
                 s = torch.exp(s)
 
@@ -313,7 +314,6 @@ class AELoss(object):
                                 lovasz_hinge(dist * 2 - 1, label_mask)
 
             ae_loss += (var_loss + instance_loss) / max(n, 1)
-
         # compute mean loss
         return ae_loss / b
 
