@@ -172,7 +172,7 @@ class Normalizer(object):
         self.std = std
 
     def __call__(self, image):
-        return (image.astype(np.float32)/self.div_value - self.mean) / self.std
+        return ((image.astype(np.float32)/self.div_value - self.mean) / self.std).astype(np.float32)
 
 
 class CommonTransforms(object):
@@ -196,6 +196,6 @@ class CommonTransforms(object):
         img_size = img.shape[:2]
         img = self.normalizer(img)
         img, label = self.aug(img, label)
-        img, label, scale = self.resizer(img, label)
-        input_tensor = self.to_tensor(img)
-        return input_tensor, label, TransInfo(img_path, img_size, scale)
+        # img, label, scale = self.resizer(img, label)
+        input_tensor = self.to_tensor(img.copy())
+        return input_tensor, label, TransInfo(img_path, img_size, 1)

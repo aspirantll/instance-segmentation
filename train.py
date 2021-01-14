@@ -259,7 +259,7 @@ def train():
     # initialize the dataloader by dir
     train_transforms = CommonTransforms(trans_cfg, model.get_input_size())
     train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
-                                           phase="crops", transforms=train_transforms)
+                                           phase="train", transforms=train_transforms)
 
     eval_transforms = CommonTransforms(trans_cfg, model.get_input_size())
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
