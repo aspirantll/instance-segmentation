@@ -154,11 +154,11 @@ class Augmenter(object):
 
     def __call__(self, image, label, flip_x=0.5):
         if np.random.rand() < flip_x:
-            image = image[:, ::-1, :]
+            image = image[:, ::-1, :].copy()
             if label is not None:
                 class_map, instance_map = label
-                class_map = class_map[:, ::-1]
-                instance_map = instance_map[:, ::-1]
+                class_map = class_map[:, ::-1].copy()
+                instance_map = instance_map[:, ::-1].copy()
                 label = (class_map, instance_map)
 
         return image, label
@@ -197,5 +197,5 @@ class CommonTransforms(object):
         img = self.normalizer(img)
         img, label = self.aug(img, label)
         # img, label, scale = self.resizer(img, label)
-        input_tensor = self.to_tensor(img.copy())
+        input_tensor = self.to_tensor(img)
         return input_tensor, label, TransInfo(img_path, img_size, 1)
