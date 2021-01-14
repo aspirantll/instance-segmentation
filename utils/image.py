@@ -185,7 +185,7 @@ def poly_to_mask(poly, img_size=None):
     poly = poly.astype(np.int32)
     if img_size is None:
         img_size = (poly.max(0) + 1)[::-1]
-    mask = np.zeros(img_size, dtype=np.int32)
+    mask = np.zeros(img_size, dtype=np.uint8)
     return cv2.fillPoly(mask, [poly], 1)
 
 

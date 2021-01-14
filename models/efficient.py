@@ -1,7 +1,6 @@
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn.init import _calculate_fan_in_and_fan_out, _no_grad_normal_
 import numpy as np
 
@@ -9,6 +8,8 @@ from .efficientnet import EfficientNet as EffNet
 from .efficientnet.utils import MemoryEfficientSwish, Swish
 from .efficientnet.utils_extra import Conv2dStaticSamePadding, MaxPool2dStaticSamePadding
 from utils.utils import Anchors
+
+input_sizes = [512, 640, 640, 640, 640, 640, 640, 640, 640]
 
 
 class SeparableConvBlock(nn.Module):
@@ -611,6 +612,9 @@ class EfficientSeg(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d):
                 m.eval()
+
+    def get_input_size(self):
+        return input_sizes[self.compound_coef]
 
     def forward(self, inputs):
         blocks = self.backbone_net(inputs)

@@ -11,11 +11,10 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import os
-import cv2
 import numpy as np
-from torch.utils import data
 from pycocotools import mask
-from utils.tranform import CommonTransforms
+from torch.utils import data
+from utils.image import poly_to_mask
 from .dataset import DatasetBuilder
 from utils.image import load_rgb_image
 
@@ -36,7 +35,7 @@ def convert_cls_id_to_index(cls_id):
     return cls_id - skip_pos - 1
 
 
-def parse_segmentation(ann):
+def parse_segmentation(ann, img_size):
     """
     parse segmentation
     :param ann: annotation
@@ -47,17 +46,17 @@ def parse_segmentation(ann):
         # polygon -- a single object might consist of multiple parts
         segment_poly = segm[0]
         segments = np.array(segment_poly, dtype=np.float32).reshape((-1, 2))
+        instance_mask = poly_to_mask(segments, img_size)
     else:
         segments = None
-        # if type(segm['counts']) == list:
-        #     # uncompressed RLE
-        #     rle = mask.frPyObjects(segm, segm["size"][0], segm["size"][1])
-        # else:
-        #     # rle
-        #     rle = ann['segmentation']
-        # binary_mask = mask.decode(rle)
-        # segments = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
-    return segments
+        if type(segm['counts']) == list:
+            # uncompressed RLE
+            rle = mask.frPyObjects(segm, segm["size"][0], segm["size"][1])
+        else:
+            # rle
+            rle = ann['segmentation']
+        instance_mask = mask.decode(rle)
+    return instance_mask
 
 
 class COCODataset(data.Dataset):
@@ -72,7 +71,9 @@ class COCODataset(data.Dataset):
             self._transforms = transforms  # ADDED THIS
         # initialize the coco api
         from pycocotools.coco import COCO
-        self.coco = COCO(os.path.join(root, subset, "instances.json"))
+
+        ann_file = os.path.join(root, "annotations/instances_%s2017.json"%subset)
+        self.coco = COCO(ann_file)
         self.ids = list(sorted(self.coco.imgs.keys()))
 
     def __getitem__(self, index):
@@ -81,25 +82,20 @@ class COCODataset(data.Dataset):
         img_id = self.ids[index]
         ann_ids = coco.getAnnIds(imgIds=img_id)
         anns = coco.loadAnns(ann_ids)
-        path = os.path.join(self._data_dir, self._phase, coco.loadImgs(img_id)[0]['file_name'])
+        path = os.path.join(self._data_dir, "%s2017" % self._phase, coco.loadImgs(img_id)[0]['file_name'])
         input_img = load_rgb_image(path)
 
         height, width, _ = input_img.shape
-        polygons = []
-        cls_ids = []
+        class_map = np.zeros((height, width), dtype=np.uint8)
+        instance_map = np.zeros((height, width), dtype=np.uint8)
+        instance_id = 1
         for ann in anns:
             # handle boundary, reverse point(w,h) to (h,w)
-            polygon = parse_segmentation(ann)
-            if polygon is None or polygon.shape[0] <= 2:
-                continue
-            polygon = polygon.astype(np.int32)
-            polygon[:, 0] = np.clip(polygon[:, 0], a_min=0, a_max=width - 1)
-            polygon[:, 1] = np.clip(polygon[:, 1], a_min=0, a_max=height - 1)
-            polygons.append(polygon)
-            # handle category id
-            cls_ids.append(convert_cls_id_to_index(ann["category_id"]))
+            mask = parse_segmentation(ann, (height, width))
+            instance_map = instance_map*(1-mask)+mask*instance_id
+            class_map = class_map*(1-mask)+mask*convert_cls_id_to_index(ann["category_id"])
 
-        label = (cls_ids, polygons)
+        label = (class_map, instance_map)
         input_img, label, trans_info = self._transforms(input_img, label, path)
         return input_img, label, trans_info
 

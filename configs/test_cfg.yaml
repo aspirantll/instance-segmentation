@@ -9,6 +9,6 @@ data:
 
 seed: 1
 compound_coef: 3
-weights_path: /media/liulei/Data/checkpoints/mask/efficient_weights_00000007.pth
+weights_path: /media/liulei/Data/checkpoints/mask/weights/efficient_weights_00000059.pth
 decode_cfg_path: ./configs/decode_cfg.yaml
 trans_cfg_path: ./configs/trans_cfg.json

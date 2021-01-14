@@ -319,7 +319,7 @@ def generate_all_annotations(target_size, targets, device):
             lt = instance_points.min(0)[0].cpu().numpy()[::-1]
             rb = instance_points.max(0)[0].cpu().numpy()[::-1]
             o_w, o_h = rb-lt
-            if o_w>=2 and o_h>=2:
+            if o_w >= 2 and o_h >= 2:
                 dets.append((lt, rb, labels[0] - 1))
                 instance_ids.append(instance_id)
 

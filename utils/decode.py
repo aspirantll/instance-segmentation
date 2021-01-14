@@ -21,7 +21,7 @@ import torch.nn as nn
 from torchvision.ops.boxes import batched_nms
 import numpy as np
 from utils.visualize import visualize_kp, visualize_box
-from utils.nms import py_cpu_nms
+from utils.nms import py_cpu_nms, boxes_nms
 from utils import parell_util
 
 base_dir = r""
@@ -162,47 +162,6 @@ def smooth_polygon(polar_pts, sorted_inds, k=360):
     return selected_inds
 
 
-
-def aug_group(pts, center_loc):
-    """
-    aug the points
-    :param pts: n * 2
-    :param center_loc: center location
-    :return:
-    """
-    # h, w = wh
-    # length = 2 * 2 * (h + w)
-    # n = pts.shape[0]
-    # alpha = n / length
-
-    center_loc = center_loc.reshape(-1)
-    # convert to polar, then sort by seta
-    internal_point = find_internal_point(pts, center_loc)
-    polar_pts = cartesian2polar(pts, internal_point)
-    sorted_inds = np.argsort(polar_pts[:, 0])
-    # selected_inds = smooth_polygon(polar_pts, sorted_inds)
-    sorted_kp = np.array([pts[ind] for ind in sorted_inds])
-
-    area = image.poly_to_mask(sorted_kp).sum()
-    if area == 0:
-        return None
-
-    # n = sorted_kp.shape[0]
-    # r = np.max(np.vstack([np.sqrt(np.power(
-    #     sorted_kp[(i+1) % n] - sorted_kp[i], 2).sum()) for i in range(n)])) * alpha_ratio
-    # bound_polygons = alphashape(pts, 1/r)
-    #
-    # poly = filter_ghost_polygons(bound_polygons, center_loc)
-    # if poly is None and cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
-    #     return sorted_kp
-    # else:
-    #     return poly
-    if cv2.pointPolygonTest(sorted_kp, tuple(center_loc), False) > 0:
-        return sorted_kp
-    else:
-        return None
-
-
 def draw_kp_mask(kp_mask, transforms, kp_threshold, infos, keyword):
     cv2.imwrite(r'{}/mask_{}{}'.format(base_dir, keyword, os.path.basename(infos.img_path)), to_numpy(kp_mask)*255)
     kp_arr = to_numpy(kp_mask.nonzero())
@@ -223,9 +182,15 @@ def draw_kp(img, kps, transforms, kp_threshold, infos, keyword):
     return img
 
 
-def draw_box(box_sizes, centers, trans_info, transforms):
+def draw_instance_map(instance_map, trans_info):
+    cv2.imwrite(
+        r'{}/{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "instances"),
+        instance_map.astype(np.uint16)*1000)
+
+
+def draw_box(boxes_lt, boxes_rb, boxes_cls, boxes_confs, trans_info):
     img = cv2.imread(trans_info.img_path)
-    img = visualize_box(img, centers, box_sizes, mask=True)
+    img = visualize_box(img, ((boxes_rb+boxes_lt)/2).astype(np.int32), (boxes_rb-boxes_lt).astype(np.int32), mask=True, cls_label=boxes_cls, cls_conf=boxes_confs)
     cv2.imwrite(
         r'{}/{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
         img)
@@ -281,7 +246,7 @@ def decode_ct_hm(conf_mat, cls_mat, wh, num_classes, cls_th, transforms, info):
     return keep_center_cls, keep_center_indexes, keep_center_confs, keep_center_whs
 
 
-def group_instance_map(hm_ae, center_whs, center_indexes, device):
+def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, device):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -290,26 +255,69 @@ def group_instance_map(hm_ae, center_whs, center_indexes, device):
     :param center_indexes: the object centers
     :return: the groups
     """
-    objs_num = len(center_indexes)
-    h, w = hm_ae.shape[1:]
+    objs_num = len(boxes_cls)
+    h, w = ae_mat.shape[1:]
     xym_s = xym[:, 0:h, 0:w].contiguous().to(device)
-    spatial_emb = torch.tanh(hm_ae[0:2, :, :]) + xym_s
-    sigma = hm_ae[2:3, :, :]
+    spatial_emb = torch.tanh(ae_mat[0:2, :, :]) + xym_s
+    sigma = ae_mat[2:3, :, :]
+    center_indexes = ((boxes_lt+boxes_rb)/2).astype(np.int32)
+    boxes_wh = (boxes_rb-boxes_lt).astype(np.int32)
 
-    instance_map = torch.zeros(h, w).byte().to(device)
+    n_boxes_cls, n_boxes_confs, instance_ids = [],[],[]
+    instance_map = torch.zeros(h, w, dtype=torch.uint8, device=device)
+    conf_map = torch.zeros(h, w, dtype=torch.float32, device=device)
     for i in range(objs_num):
-        center_index = center_indexes[i].astype(np.int32)
-        center = xym_s[:, center_index[0], center_index[1]].view(2, 1, 1)
-        o_wh = center_whs[i]
-        lt, rb = generate_corner(center_index, o_wh, h, w, 1.2)
-        selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
-        s = torch.exp(sigma[:, center_index[0], center_index[1]]*10)
-        dist = torch.exp(-1 * torch.sum(torch.pow(selected_spatial_emb -
-                                                  center, 2) * s, 0, keepdim=True))
+        center_index = center_indexes[i]
+        box_wh = boxes_wh[i]
 
-        proposal = (dist > 0.5).squeeze()
-        instance_map[lt[0]:rb[0], lt[1]:rb[1]][proposal] = i+1
-    return instance_map.cpu().numpy()
+        if box_wh[0] < 2 or box_wh[1] < 2:
+            continue
+
+        center = xym_s[:, center_index[0], center_index[1]].view(2, 1, 1)
+        lt, rb = generate_corner(center_index, box_wh, h, w, 1.0)
+        selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
+        s = torch.exp(sigma[:, center_index[0], center_index[1]])
+        dist = torch.exp(-1 * torch.sum(torch.pow(selected_spatial_emb -
+                                                  center, 2) * s, 0, keepdim=True)).squeeze()
+
+        proposal = (dist > 0.5)
+        # resolve the conflicts
+        box_h, box_w = proposal.shape
+        area = box_h*box_w
+        if proposal.sum().item() < 128 or proposal.sum().item()/area < 0.3:
+            continue
+
+        # nms
+        instance_map_cut = instance_map[lt[0]:rb[0], lt[1]:rb[1]]
+        conf_map_cut = conf_map[lt[0]:rb[0], lt[1]:rb[1]]
+        occupied_ids = instance_map_cut.unique().cpu().numpy()
+        skip = False
+        for occupied_id in occupied_ids:
+            if occupied_id == 0:
+                continue
+            other_proposal = instance_map_cut.eq(occupied_id)
+            overlapped_area = other_proposal*proposal
+            if overlapped_area.sum().item()/proposal.sum().item() >= 0.5:
+                skip = True
+                break
+            if (conf_map_cut[overlapped_area] >= dist[overlapped_area]).sum() > overlapped_area.sum()/2:
+                proposal[overlapped_area] = False
+
+        if skip or proposal.sum().item() < 128 or proposal.sum().item()/area < 0.3:
+            continue
+
+        cls_id = boxes_cls[i]
+        conf = boxes_confs[i]
+        instance_id = i+1
+
+        instance_map[lt[0]:rb[0], lt[1]:rb[1]][proposal] = instance_id
+        conf_map[lt[0]:rb[0], lt[1]:rb[1]][proposal] = dist[proposal]
+
+        n_boxes_cls.append(cls_id)
+        n_boxes_confs.append(conf)
+        instance_ids.append(instance_id)
+
+    return n_boxes_cls, n_boxes_confs, instance_ids, instance_map.cpu().numpy()
 
 
 def decode_boxes(x, anchors, regression, classification, threshold, iou_threshold):
@@ -357,26 +365,21 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
     return dets
 
 
-def decode_single(ae_mat, boxes, info, transforms, decode_cfg, device):
-    center_cls = boxes["class_ids"]
-    if center_cls.shape[0] == 0:
-        return ([],)
-    lt = boxes["rois"][:, :2][:, ::-1]
-    rb = boxes["rois"][:, 2:][:, ::-1]
-    center_indexes = (lt+rb)/2
-    center_confs = boxes["scores"]
-    center_whs = rb - lt
+def decode_single(ae_mat, dets, info, decode_cfg, device):
+    cls_ids, boxes, confs = boxes_nms(dets, 0.2)
+    if len(cls_ids) == 0:
+        return ([], [])
+    boxes_lt = boxes[:, :2][:, ::-1]
+    boxes_rb = boxes[:, 2:][:, ::-1]
 
-    # group the key points
+    cls_ids, confs, instance_ids, instance_map = group_instance_map(ae_mat, cls_ids, confs, boxes_lt, boxes_rb, device)
     if decode_cfg.draw_flag:
-        draw_box(center_whs, center_indexes, info, transforms)
-    instance_map = group_instance_map(ae_mat, center_whs, center_indexes, device)
-    cv2.imshow("instance mask", instance_map.astype(np.uint16)*1000)
-    cv2.waitKey()
-    return ([e for e in zip(center_cls, center_confs, center_indexes)], instance_map)
+        draw_box(boxes_lt[:, ::-1], boxes_rb[:, ::-1], cls_ids, confs, info)
+        draw_instance_map(instance_map, info)
+    return ([e for e in zip(cls_ids, confs, instance_ids)], instance_map)
 
 
-def decode_output(inputs, outs, infos, transforms, decode_cfg, device):
+def decode_output(inputs, outs, infos, decode_cfg, device):
     """
     decode the model output
     :param outs:
@@ -390,7 +393,6 @@ def decode_output(inputs, outs, infos, transforms, decode_cfg, device):
     kp_out, regression, classification, anchors = outs
     det_boxes = decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
 
-    dets = parell_util.multi_apply(decode_single, kp_out[0], det_boxes, infos, transforms=transforms
-                                   , decode_cfg=decode_cfg, device=device)
+    dets = parell_util.multi_apply(decode_single, kp_out[0], det_boxes, infos, decode_cfg=decode_cfg, device=device)
 
-    return dets[0]
+    return dets

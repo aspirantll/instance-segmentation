@@ -59,10 +59,6 @@ data_cfg = cfg.data
 decode_cfg = Config(cfg.decode_cfg_path)
 trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
-if 'resize' in trans_cfg.get('val_trans', 'trans_seq'):
-    decode.target_size = trans_cfg.get('val_trans', 'resize')['target_size']
-
-
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
 # validate the arguments
@@ -100,7 +96,7 @@ def load_state_dict(model, weights_path):
     return checkpoint["epoch"]
 
 
-def evaluate_model_by_weights(eval_dataloader, transforms, weights_path, logger=None):
+def evaluate_model_by_weights(eval_dataloader, weights_path, logger=None):
     """
     validate model for a epoch
     :param transforms:
@@ -112,7 +108,7 @@ def evaluate_model_by_weights(eval_dataloader, transforms, weights_path, logger=
     epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
-    evaluate_model(data_cfg, eval_dataloader, transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+    evaluate_model(data_cfg, eval_dataloader, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
 
 
 def load_weight_paths(weights_dir):
@@ -131,8 +127,8 @@ def eval_weights_dir(weights_dir):
     weight_paths = load_weight_paths(weights_dir)
     logger.write("the num of weights file: {}".format(len(weight_paths)))
     for iter_id, weight_path in enumerate(weight_paths):
-        if iter_id % 10 == 0:
-            evaluate_model_by_weights(eval_dataloader, transforms, weight_path, logger)
+        if iter_id % 2 == 0:
+            evaluate_model_by_weights(eval_dataloader, weight_path, logger)
 
 
 if __name__ == "__main__":
@@ -142,7 +138,7 @@ if __name__ == "__main__":
     # eval
     print("start to evaluate...")
     if cfg.weights_dir is None:
-        evaluate_model_by_weights(eval_dataloader, transforms, cfg.weights_path, logger)
+        evaluate_model_by_weights(eval_dataloader, cfg.weights_path, logger)
     else:
         eval_weights_dir(cfg.weights_dir)
     logger.close()

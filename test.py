@@ -23,7 +23,7 @@ from utils.logger import Logger
 from models import EfficientSeg
 import data
 from utils import decode
-from utils.visualize import visualize_instance
+from utils.visualize import visualize_mask
 from utils import image
 from configs import Config, Configer
 from utils.tranform import CommonTransforms
@@ -94,27 +94,28 @@ def load_state_dict(model):
     logger.write("loaded the weights:" + cfg.weights_path)
 
 
-def post_handle(det, info):
+def post_handle(det, instance_map, info):
     img_path = info.img_path
     name = os.path.basename(img_path)
     logger.write("in {} detected {} objs".format(name, len(det)))
 
     img = cv2.imread(img_path)
     for j in range(len(det)):
-        img = visualize_instance(img, [det[j][-1]], mask=True)
+        cls_id, conf, instance_id = det[j]
+        img = visualize_mask(img, instance_map==instance_id)
     save_path = os.path.join(data_cfg.save_dir, name)
     cv2.imwrite(save_path, img)
     logger.write("detected result saved in {}".format(save_path))
 
 
-def handle_output(inputs, infos, model, transforms):
+def handle_output(inputs, infos, model):
     inputs = inputs.to(device)
     # forward the models and loss
     with torch.no_grad():
         outputs = model(inputs)
-        dets = decode.decode_output(inputs, outputs, infos, transforms, decode_cfg, device)
+        dets, instance_maps = decode.decode_output(inputs, outputs, infos, decode_cfg, device)
         for i in range(len(dets)):
-            post_handle(dets[i], infos[i])
+            post_handle(dets[i], instance_maps[i], infos[i])
 
 def test():
     """
@@ -140,12 +141,12 @@ def test():
         for iter_id, test_data in enumerate(test_dataloader):
             # to device
             inputs, infos = test_data
-            handle_output(inputs, infos, model, transforms)
+            handle_output(inputs, infos, model)
     else:
         img_path = data_cfg.test_image
         input_img = image.load_rgb_image(img_path)
         input, _, info = transforms(input_img, img_path=img_path)
-        handle_output(input.unsqueeze(0), [info], model, transforms)
+        handle_output(input.unsqueeze(0), [info], model)
     logger.close()
 
 

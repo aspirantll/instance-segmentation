@@ -20,6 +20,9 @@ import os
 import time
 import numpy as np
 import warnings
+
+from models.efficient import input_sizes
+
 warnings.filterwarnings("ignore")
 from concurrent.futures import ThreadPoolExecutor
 import moxing as mox
@@ -249,18 +252,18 @@ def train():
     train the model by the args
     :return:
     """
-    # initialize the dataloader by dir
-    train_transforms = CommonTransforms(trans_cfg, "train")
-    train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
-                                           phase="crops", transforms=train_transforms)
-
-    eval_transforms = CommonTransforms(trans_cfg, "val")
-    eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
-                                           phase="val", transforms=eval_transforms)
-
     # initialize model, optimizer, loss_fn
     model = EfficientSeg(data_cfg.num_classes, compound_coef=cfg.compound_coef,
                                  ratios=eval(cfg.anchors_ratios), scales=eval(cfg.anchors_scales))
+
+    # initialize the dataloader by dir
+    train_transforms = CommonTransforms(trans_cfg, model.get_input_size())
+    train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
+                                           phase="crops", transforms=train_transforms)
+
+    eval_transforms = CommonTransforms(trans_cfg, model.get_input_size())
+    eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
+                                           phase="val", transforms=eval_transforms)
 
     start_epoch, best_ap = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
@@ -276,7 +279,7 @@ def train():
         executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
 
         if epoch >= cfg.start_eval_epoch:
-            epoch, mAP, eval_results = evaluate_model(data_cfg, eval_dataloader, eval_transforms, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+            epoch, mAP, eval_results = evaluate_model(data_cfg, eval_dataloader, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
             # judge the model. if model is greater than current best loss
             if best_ap < mAP:
                 best_ap = mAP

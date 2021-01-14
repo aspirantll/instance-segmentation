@@ -16,7 +16,7 @@ from PIL import Image
 from utils import image
 from utils import cv2_aug_transforms
 
-TransInfo = namedtuple('TransInfo', ['img_path', 'img_size'])
+TransInfo = namedtuple('TransInfo', ['img_path', 'img_size', "scale"])
 
 class Normalize(object):
     """Normalize a ``torch.tensor``
@@ -111,27 +111,79 @@ class ReLabel(object):
         return inputs
 
 
-class Compose(object):
+class Resizer(object):
+    """Convert ndarrays in sample to Tensors."""
 
-    def __init__(self, transforms):
-        self.transforms = transforms
+    def __init__(self, img_size=512):
+        self.img_size = img_size
 
-    def __call__(self, inputs):
-        for t in self.transforms:
-            inputs = t(inputs)
+    def __call__(self, image, label=None):
+        height, width, _ = image.shape
+        if height > width:
+            scale = self.img_size / height
+            resized_height = self.img_size
+            resized_width = int(width * scale)
+        else:
+            scale = self.img_size / width
+            resized_height = int(height * scale)
+            resized_width = self.img_size
 
-        return inputs
+        image = cv2.resize(image, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
+
+        new_image = np.zeros((self.img_size, self.img_size, 3))
+        new_image[0:resized_height, 0:resized_width] = image
+
+        if label is not None:
+            class_map, instance_map = label
+
+            class_map = cv2.resize(class_map, (resized_width, resized_height), interpolation=cv2.INTER_NEAREST)
+            new_class_map = np.zeros((self.img_size, self.img_size))
+            new_class_map[0:resized_height, 0:resized_width] = class_map
+
+            instance_map = cv2.resize(instance_map, (resized_width, resized_height), interpolation=cv2.INTER_NEAREST)
+            new_instance_map = np.zeros((self.img_size, self.img_size))
+            new_instance_map[0:resized_height, 0:resized_width] = instance_map
+
+            label = (new_class_map, new_instance_map)
+
+        return new_image, label, scale
+
+
+class Augmenter(object):
+    """Convert ndarrays in sample to Tensors."""
+
+    def __call__(self, image, label, flip_x=0.5):
+        if np.random.rand() < flip_x:
+            image = image[:, ::-1, :]
+            if label is not None:
+                class_map, instance_map = label
+                class_map = class_map[:, ::-1]
+                instance_map = instance_map[:, ::-1]
+                label = (class_map, instance_map)
+
+        return image, label
+
+
+class Normalizer(object):
+
+    def __init__(self, div_value, mean, std):
+        self.div_value = div_value
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, image):
+        return (image.astype(np.float32)/self.div_value - self.mean) / self.std
 
 
 class CommonTransforms(object):
-    def __init__(self, trans_cfg, split="train"):
+    def __init__(self, trans_cfg, input_size):
         self.configer = trans_cfg
-        self.img_transform = Compose([
-            ToTensor(),
-            Normalize(div_value=self.configer.get('normalize', 'div_value'),
+        self.normalizer = Normalizer(div_value=self.configer.get('normalize', 'div_value'),
                             mean=self.configer.get('normalize', 'mean'),
-                            std=self.configer.get('normalize', 'std')), ]
-        )
+                            std=self.configer.get('normalize', 'std'))
+        self.aug = Augmenter()
+        self.resizer = Resizer(input_size)
+        self.to_tensor = ToTensor()
 
     def __call__(self, img, label=None, img_path=None):
         """
@@ -142,5 +194,8 @@ class CommonTransforms(object):
         :return:
         """
         img_size = img.shape[:2]
-        input_tensor = self.img_transform(img)
-        return input_tensor, label, TransInfo(img_path, img_size)
+        img = self.normalizer(img)
+        img, label = self.aug(img, label)
+        img, label, scale = self.resizer(img, label)
+        input_tensor = self.to_tensor(img)
+        return input_tensor, label, TransInfo(img_path, img_size, scale)
