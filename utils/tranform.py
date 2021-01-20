@@ -16,7 +16,7 @@ from PIL import Image
 from utils import image
 from utils import cv2_aug_transforms
 
-TransInfo = namedtuple('TransInfo', ['img_path', 'img_size', "scale"])
+TransInfo = namedtuple('TransInfo', ['img_path', 'img_size'])
 
 class Normalize(object):
     """Normalize a ``torch.tensor``
@@ -176,14 +176,15 @@ class Normalizer(object):
 
 
 class CommonTransforms(object):
-    def __init__(self, trans_cfg, input_size):
+    def __init__(self, trans_cfg, phase="train"):
         self.configer = trans_cfg
         self.normalizer = Normalizer(div_value=self.configer.get('normalize', 'div_value'),
                             mean=self.configer.get('normalize', 'mean'),
                             std=self.configer.get('normalize', 'std'))
         self.aug = Augmenter()
-        self.resizer = Resizer(input_size)
+        # self.resizer = Resizer(input_size)
         self.to_tensor = ToTensor()
+        self.phase = phase
 
     def __call__(self, img, label=None, img_path=None):
         """
@@ -195,7 +196,7 @@ class CommonTransforms(object):
         """
         img_size = img.shape[:2]
         img = self.normalizer(img)
-        img, label = self.aug(img, label)
-        # img, label, scale = self.resizer(img, label)
+        if self.phase == "train":
+            img, label = self.aug(img, label)
         input_tensor = self.to_tensor(img)
-        return input_tensor, label, TransInfo(img_path, img_size, 1)
+        return input_tensor, label, TransInfo(img_path, img_size)

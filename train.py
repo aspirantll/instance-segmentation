@@ -18,8 +18,6 @@ import time
 import numpy as np
 import warnings
 
-from models.efficient import input_sizes
-
 warnings.filterwarnings("ignore")
 from concurrent.futures import ThreadPoolExecutor
 
@@ -244,11 +242,11 @@ def train():
                                  ratios=eval(cfg.anchors_ratios), scales=eval(cfg.anchors_scales))
 
     # initialize the dataloader by dir
-    train_transforms = CommonTransforms(trans_cfg, model.get_input_size())
+    train_transforms = CommonTransforms(trans_cfg, "train")
     train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
                                            phase="train", transforms=train_transforms)
 
-    eval_transforms = CommonTransforms(trans_cfg, model.get_input_size())
+    eval_transforms = CommonTransforms(trans_cfg, "val")
     eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
                                            phase="val", transforms=eval_transforms)
 
