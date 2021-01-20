@@ -14,7 +14,7 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser(description="generateCrop")
 # add arguments
 parser.add_argument("--data_root", help="the root dir of cityscape", dest="data_root", default="", type=str)
-parser.add_argument("--crop_scale", help="the scale of crop", dest="crop_scale", default=2, type=int)
+parser.add_argument("--crop_size", help="the size of crop", dest="crop_size", default=512, type=int)
 parser.add_argument("--target", help="the target of crop", dest="target", default="train2", type=str)
 # parse args
 args = parser.parse_args()
@@ -37,33 +37,39 @@ def process(tup):
     image = Image.open(im)
     instance = Image.open(inst)
     w, h = image.size
-    t_w, t_h = w//CROP_SCALE, h//CROP_SCALE
 
     # loop over instances
-    index = 0
-    for s_w in range(0, w, t_w):
-        if s_w+t_w>=w:
-            break
-        for s_h in range(0, h, t_h):
-            if s_h+t_h>=h:
-                break
-            im_crop = image.crop((s_w, s_h, s_w + t_w, s_h + t_h))
-            instance_crop = instance.crop((s_w, s_h, s_w + t_w, s_h + t_h))
+    instance_np = np.array(instance, copy=False)
+    object_mask = np.logical_and(instance_np >= OBJ_ID * 1000, instance_np < (OBJ_ID + 1) * 1000)
 
-            im_crop.save(image_path + "_{:03d}.png".format(index))
-            instance_crop.save(instance_path + "_{:03d}.png".format(index))
-            index = index + 1
+    ids = np.unique(instance_np[object_mask])
+    ids = ids[ids != 0]
+
+    # loop over instances
+    for j, id in enumerate(ids):
+        y, x = np.where(instance_np == id)
+        ym, xm = np.mean(y), np.mean(x)
+
+        ii = int(np.clip(ym - CROP_SIZE / 2, 0, h - CROP_SIZE))
+        jj = int(np.clip(xm - CROP_SIZE / 2, 0, w - CROP_SIZE))
+
+        im_crop = image.crop((jj, ii, jj + CROP_SIZE, ii + CROP_SIZE))
+        instance_crop = instance.crop((jj, ii, jj + CROP_SIZE, ii + CROP_SIZE))
+
+        im_crop.save(image_path + "_{:03d}.png".format(j))
+        instance_crop.save(instance_path + "_{:03d}.png".format(j))
 
 
 if __name__ == '__main__':
     # cityscapes dataset
     CITYSCAPES_DIR=args.data_root
-    CROP_SCALE=args.crop_scale
+    CROP_SIZE=args.crop_size
     CROP_TARGET = args.target
 
     IMAGE_DIR=os.path.join(CITYSCAPES_DIR, 'leftImg8bit')
     INSTANCE_DIR=os.path.join(CITYSCAPES_DIR, 'gtFine')
 
+    OBJ_ID = 26
     # load images/instances
     images = glob.glob(os.path.join(IMAGE_DIR, 'train', '*/*.png'))
     images.sort()

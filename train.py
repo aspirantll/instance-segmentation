@@ -257,11 +257,7 @@ def train():
     # initialize the dataloader by dir
     train_transforms = CommonTransforms(trans_cfg, "train")
     train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
-                                           phase="train", transforms=train_transforms)
-
-    eval_transforms = CommonTransforms(trans_cfg, "val")
-    eval_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
-                                           phase="val", transforms=eval_transforms)
+                                           phase=data_cfg.subset, transforms=train_transforms)
 
     start_epoch, best_ap = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
@@ -276,11 +272,6 @@ def train():
         write_metric(train_loss_states, epoch, "train")
         executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
 
-        if epoch >= cfg.start_eval_epoch:
-            epoch, mAP, eval_results = evaluate_model(data_cfg, eval_dataloader, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
-            # judge the model. if model is greater than current best loss
-            if best_ap < mAP:
-                best_ap = mAP
     logger.write("the best mAP:{}".format(best_ap))
     logger.close()
     executor.shutdown(wait=True)
