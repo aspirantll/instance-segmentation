@@ -54,9 +54,6 @@ trans_cfg = Configer(configs=cfg.trans_cfg_path)
 
 decode.base_dir = data_cfg.save_dir
 
-if 'resize' in trans_cfg.get('val_trans', 'trans_seq'):
-    decode.target_size = trans_cfg.get('val_trans', 'resize')['target_size']
-
 if data_cfg.num_classes == -1:
     data_cfg.num_classes = data.get_cls_num(data_cfg.dataset)
 
