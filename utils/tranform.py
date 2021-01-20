@@ -13,8 +13,6 @@ from collections import namedtuple
 import torch
 import numpy as np
 from PIL import Image
-from utils import image
-from utils import cv2_aug_transforms
 
 TransInfo = namedtuple('TransInfo', ['img_path', 'img_size'])
 
