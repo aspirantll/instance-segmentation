@@ -4,6 +4,7 @@ data:
   dataset: cityscapes
   batch_size: 1
   num_classes: -1
+  subset: train2
 
 optimizer:
   lr: 2e-5
