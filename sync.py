@@ -17,7 +17,7 @@ from obs import ObsClient
 from matplotlib import pyplot as plt
 
 
-bucketName = 'll-coco'
+bucketName = 'hyy-coco'
 
 
 def scan(local_dir, remote_dir):
@@ -132,18 +132,18 @@ def collect_loss(log_dir):
 
 if __name__ == "__main__":
     obsClient = ObsClient(
-        access_key_id='JMG5EEHGZA33U0FCLU8E',
-        secret_access_key='RxfkJEi7HraI3rP5nrFqMRocHrXPwaJfIr0lyhGS',
+        access_key_id='CKDX7ZZDE1EFF2RBKQUV',
+        secret_access_key='E6fYmLUeT8jvLd5FPs9RKWKhXONv2K8ywlQKQDtd',
         server='https://obs.cn-north-4.myhuaweicloud.com'
     )
-    local_dir = r'D:\checkpoints\efficient\logs\\'
-    remote_dir = r'efficient3/logs/'
+    # local_dir = r'D:\checkpoints\efficient\logs\\'
+    # remote_dir = r'efficient3/logs/'
+    #
+    # download(obsClient, local_dir, remote_dir, False, False)
 
-    download(obsClient, local_dir, remote_dir, False, False)
-
-    # local_dir = r"D:\cityscapes\gtFine\train\\"
-    # remote_dir = r"datasets/cityscapes/gtFine/train/"
-    # upload(obsClient, local_dir, remote_dir, False, "gtFine_fill_polygons.json")
+    local_dir = r"D:\cityscapes\gtFine\train\\"
+    remote_dir = r"datasets/cityscapes/gtFine/train/"
+    upload(obsClient, local_dir, remote_dir, False, "gtFine_instanceIds.png")
 
     obsClient.close()
     # collect_loss(local_dir)

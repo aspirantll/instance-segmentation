@@ -17,4 +17,3 @@ scikit-image
 webcolors
 PyYAML
 Click
-Shapely-1.7.0-cp36-cp36m-manylinux1_x86_64.whl

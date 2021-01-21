@@ -5,6 +5,8 @@ Licensed under the CC BY-NC 4.0 license (https://creativecommons.org/licenses/by
 import argparse
 import glob
 import os
+import moxing as mox
+mox.file.shift('os', 'mox')
 from multiprocessing import Pool
 
 import numpy as np
@@ -16,6 +18,10 @@ parser = argparse.ArgumentParser(description="generateCrop")
 parser.add_argument("--data_root", help="the root dir of cityscape", dest="data_root", default="", type=str)
 parser.add_argument("--crop_size", help="the size of crop", dest="crop_size", default=512, type=int)
 parser.add_argument("--target", help="the target of crop", dest="target", default="train2", type=str)
+
+parser.add_argument("--data_url", required=False, type=str)
+parser.add_argument("--init_method", required=False, type=str)
+parser.add_argument("--train_url", required=False, type=str)
 # parse args
 args = parser.parse_args()
 

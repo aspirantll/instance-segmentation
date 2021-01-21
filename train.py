@@ -12,6 +12,9 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import argparse
+import os
+os.system("rm /home/work/anaconda3/lib/libmkldnn.so")
+os.system("rm /home/work/anaconda3/lib/libmkldnn.so.0")
 import torch
 import os
 import time
@@ -20,6 +23,8 @@ import warnings
 
 warnings.filterwarnings("ignore")
 from concurrent.futures import ThreadPoolExecutor
+import moxing as mox
+mox.file.shift('os', 'mox')
 
 import data
 from configs import Config, Configer
@@ -43,6 +48,10 @@ print("loading the arguments...")
 parser = argparse.ArgumentParser(description="training")
 # add arguments
 parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/train_cfg.yaml", type=str)
+# for modelarts
+parser.add_argument("--data_url", required=False, type=str)
+parser.add_argument("--init_method", required=False, type=str)
+parser.add_argument("--train_url", required=False, type=str)
 # parse args
 args = parser.parse_args()
 
@@ -146,8 +155,6 @@ def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
                     print('Ignoring ' + str(e) + '"')
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
-                model.init_weight()
-                save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)
                 return start_epoch+1
     # model.init_weight()
     save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)
@@ -197,40 +204,44 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
         # load data time
         data_time.update(time.time() - last)
         inputs, targets, infos = train_data
-        # to device
-        inputs = inputs.to(device)
-        # forward the models and loss
-        outputs = model(inputs)
-        loss, loss_stats = loss_fn(outputs, targets)
-        if loss == 0 or not torch.isfinite(loss):
-            continue
+        try:
+            # to device
+            inputs = inputs.to(device)
+            # forward the models and loss
+            outputs = model(inputs)
+            loss, loss_stats = loss_fn(outputs, targets)
+            if loss == 0 or not torch.isfinite(loss):
+                continue
 
-        # update the weights
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            # update the weights
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-        # network time and update time
-        batch_time.update(time.time() - last)
-        last = time.time()
-        # handle the log and accumulate the loss
-        # logger.open_summary_writer()
-        log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
-            epoch, iter_id, num_iter, phase=phase, total=last - start)
-        for l in avg_loss_states:
-            if l in loss_stats:
-                avg_loss_states[l].update(
-                    loss_stats[l].item(), inputs.size(0))
-                log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
-                # logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
-        # logger.close_summary_writer()
-        running_loss.update(loss.item(), inputs.size(0))
-        log_item = log_item + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
-                                  '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)
+            # network time and update time
+            batch_time.update(time.time() - last)
+            last = time.time()
+            # handle the log and accumulate the loss
+            # logger.open_summary_writer()
+            log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
+                epoch, iter_id, num_iter, phase=phase, total=last - start)
+            for l in avg_loss_states:
+                if l in loss_stats:
+                    avg_loss_states[l].update(
+                        loss_stats[l].item(), inputs.size(0))
+                    log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
+                    # logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
+            # logger.close_summary_writer()
+            running_loss.update(loss.item(), inputs.size(0))
+            log_item = log_item + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
+                                      '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)
 
-        logger.write(log_item, level=1)
-        del inputs, loss
-        torch.cuda.empty_cache()
+            logger.write(log_item, level=1)
+            del inputs, loss
+            torch.cuda.empty_cache()
+        except RuntimeError as e:
+            print(infos)
+            raise e
     return running_loss, avg_loss_states
 
 

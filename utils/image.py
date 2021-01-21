@@ -104,7 +104,7 @@ def load_rgb_image(img_path):
 
 
 def load_instance_image(img_path):
-    return cv2.imread(img_path, cv2.IMREAD_ANYDEPTH)
+    return cv2.imdecode(np.fromstring(mox.file.read(img_path, binary=True), np.uint8), cv2.IMREAD_ANYDEPTH)
 
 
 def mask2poly(mask, threshold=0.5):
