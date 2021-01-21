@@ -12,9 +12,6 @@ __authors__ = ""
 __version__ = "1.0.0"
 
 import argparse
-import os
-os.system("rm /home/work/anaconda3/lib/libmkldnn.so")
-os.system("rm /home/work/anaconda3/lib/libmkldnn.so.0")
 import torch
 import os
 import time
@@ -23,8 +20,6 @@ import warnings
 
 warnings.filterwarnings("ignore")
 from concurrent.futures import ThreadPoolExecutor
-import moxing as mox
-mox.file.shift('os', 'mox')
 
 import data
 from configs import Config, Configer
@@ -48,10 +43,6 @@ print("loading the arguments...")
 parser = argparse.ArgumentParser(description="training")
 # add arguments
 parser.add_argument("--cfg_path", help="the file of cfg", dest="cfg_path", default="./configs/train_cfg.yaml", type=str)
-# for modelarts
-parser.add_argument("--data_url", required=False, type=str)
-parser.add_argument("--init_method", required=False, type=str)
-parser.add_argument("--train_url", required=False, type=str)
 # parse args
 args = parser.parse_args()
 
@@ -87,7 +78,7 @@ logger = Logger.get_logger()
 executor = ThreadPoolExecutor(max_workers=3)
 
 
-def save_checkpoint(model_dict, epoch, best_ap, save_dir, iter_id=None):
+def save_checkpoint(model, optimizer, scheduler, epoch, save_dir):
     """
     save the check points
     :param model_dict: the best model
@@ -98,14 +89,12 @@ def save_checkpoint(model_dict, epoch, best_ap, save_dir, iter_id=None):
     :return:
     """
     checkpoint = {
-        'state_dict': model_dict,
-        'epoch': epoch,
-        'best_ap': best_ap
+        'state_dict': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scheduler': scheduler.state_dict(),
+        'epoch': epoch
     }
-    if iter_id is None:
-        weight_path = os.path.join(save_dir, "efficient_weights_{:0>8}.pth".format(epoch))
-    else:
-        weight_path = os.path.join(save_dir, "efficient_weights_{:0>4}_{:0>4}.pth".format(epoch, iter_id))
+    weight_path = os.path.join(save_dir, "efficient_weights_{:0>8}.pth".format(epoch))
     # torch.save(best_model_wts, weight_path)
     torch.save(checkpoint, weight_path)
     logger.write("epoch {}, save the weight to {}".format(epoch, weight_path))
@@ -121,12 +110,13 @@ def get_optimizer(model, opt):
     filter_params = filter(lambda p: p.requires_grad, model.parameters())
     if opt.type == "SGD":
         return torch.optim.SGD(filter_params, lr=opt.lr, momentum=opt.momentum)
-    elif opt.type == "Adam":
-        return torch.optim.Adam(filter_params, opt.lr, (0.9, 0.999),  eps=1e-08, weight_decay=1e-4)
+    elif opt.type == "Adamw":
+        return torch.optim.AdamW(filter_params, lr=opt.lr)
     elif opt.type == "Adadelta":
         return torch.optim.Adadelta(filter_params, lr=opt.lr)
 
-def load_state_dict(model, save_dir, pretrained):
+
+def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
     """
     if save_dir contains the checkpoint, then the model will load lastest weights
     :param model:
@@ -149,18 +139,19 @@ def load_state_dict(model, save_dir, pretrained):
                 checkpoint = torch.load(weight_path, map_location=device_type)
                 try:
                     ret = model.load_state_dict(checkpoint["state_dict"], strict=False)
+                    ret = optimizer.load_state_dict(checkpoint["optimizer"])
+                    ret = scheduler.load_state_dict(checkpoint["scheduler"])
                     print(ret)
                 except RuntimeError as e:
                     print('Ignoring ' + str(e) + '"')
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
-                best_ap = checkpoint["best_ap"] if "best_ap" in checkpoint else 0
                 model.init_weight()
-                save_checkpoint(model.state_dict(), -1, 0, data_cfg.save_dir)
-                return start_epoch+1, best_ap
+                save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)
+                return start_epoch+1
     # model.init_weight()
-    save_checkpoint(model.state_dict(), -1, 0, data_cfg.save_dir)
-    return 0, 0
+    save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)
+    return 0
 
 
 def write_metric(metric, epoch, phase):
@@ -206,40 +197,40 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
         # load data time
         data_time.update(time.time() - last)
         inputs, targets, infos = train_data
-        try:
-            # to device
-            inputs = inputs.to(device)
-            # forward the models and loss
-            outputs = model(inputs)
-            loss, loss_stats = loss_fn(outputs, targets)
-            # update the weights
-            optimizer.step(loss)
-            # network time and update time
-            batch_time.update(time.time() - last)
-            last = time.time()
-            # handle the log and accumulate the loss
-            # logger.open_summary_writer()
-            log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
-                epoch, iter_id + 1, num_iter, phase=phase, total=last - start)
-            for l in avg_loss_states:
-                if l in loss_stats:
-                    avg_loss_states[l].update(
-                        loss_stats[l].item(), inputs.size(0))
-                    log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
-                    # logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
-            # logger.close_summary_writer()
-            running_loss.update(loss.item(), inputs.size(0))
-            log_item = log_item + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
-                                      '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)
+        # to device
+        inputs = inputs.to(device)
+        # forward the models and loss
+        outputs = model(inputs)
+        loss, loss_stats = loss_fn(outputs, targets)
+        if loss == 0 or not torch.isfinite(loss):
+            continue
 
-            logger.write(log_item, level=1)
-            del inputs, loss
-            torch.cuda.empty_cache()
-            if (iter_id + 1) % cfg.save_span == 0:
-                executor.submit(save_checkpoint, model.state_dict(), epoch, running_loss.avg, data_cfg.save_dir, iter_id)
-        except RuntimeError as e:
-            print(infos)
-            raise e
+        # update the weights
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # network time and update time
+        batch_time.update(time.time() - last)
+        last = time.time()
+        # handle the log and accumulate the loss
+        # logger.open_summary_writer()
+        log_item = '{phase} per epoch: [{0}][{1}/{2}]|Tot: {total:} '.format(
+            epoch, iter_id, num_iter, phase=phase, total=last - start)
+        for l in avg_loss_states:
+            if l in loss_stats:
+                avg_loss_states[l].update(
+                    loss_stats[l].item(), inputs.size(0))
+                log_item = log_item + '|{}:{:.4f}'.format(l, avg_loss_states[l].avg)
+                # logger.scalar_summary('{phase}/epoch/{}'.format(l, phase=phase), avg_loss_states[l].avg, epoch* num_iter + iter_id)
+        # logger.close_summary_writer()
+        running_loss.update(loss.item(), inputs.size(0))
+        log_item = log_item + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
+                                  '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)
+
+        logger.write(log_item, level=1)
+        del inputs, loss
+        torch.cuda.empty_cache()
     return running_loss, avg_loss_states
 
 
@@ -257,20 +248,23 @@ def train():
     train_dataloader = data.get_dataloader(data_cfg.batch_size, data_cfg.dataset, data_cfg.train_dir,
                                            phase=data_cfg.subset, transforms=train_transforms)
 
-    start_epoch, best_ap = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
     optimizer = get_optimizer(model, opt_cfg)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
     loss_fn = ComposeLoss(device)
+
+    start_epoch = load_state_dict(model, optimizer, scheduler, data_cfg.save_dir, cfg.pretrained_path)
+
 
     # train model
     # foreach epoch
     for epoch in range(start_epoch, cfg.num_epochs):
         # each epoch includes two phase: train,val
         train_loss, train_loss_states = train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch)
+        scheduler.step(train_loss.avg)
         write_metric(train_loss_states, epoch, "train")
-        executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
+        executor.submit(save_checkpoint, model, optimizer, scheduler, epoch, data_cfg.save_dir)
 
-    logger.write("the best mAP:{}".format(best_ap))
     logger.close()
     executor.shutdown(wait=True)
 
