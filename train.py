@@ -112,8 +112,8 @@ def get_optimizer(model, opt):
     filter_params = filter(lambda p: p.requires_grad, model.parameters())
     if opt.type == "SGD":
         return torch.optim.SGD(filter_params, lr=opt.lr, momentum=opt.momentum)
-    elif opt.type == "Adam":
-        return torch.optim.Adam(filter_params, opt.lr, (0.9, 0.999),  eps=1e-08, weight_decay=1e-4)
+    elif opt.type == "Adamw":
+        return torch.optim.AdamW(filter_params, lr=opt.lr)
     elif opt.type == "Adadelta":
         return torch.optim.Adadelta(filter_params, lr=opt.lr)
 
@@ -203,9 +203,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
         outputs = model(inputs)
         loss, loss_stats = loss_fn(outputs, targets)
         # update the weights
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        optimizer.step(loss)
         # network time and update time
         batch_time.update(time.time() - last)
         last = time.time()
@@ -249,13 +247,14 @@ def train():
     start_epoch, best_ap = load_state_dict(model, data_cfg.save_dir, cfg.pretrained_path)
     model = model.to(device)
     optimizer = get_optimizer(model, opt_cfg)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
     loss_fn = ComposeLoss(device)
 
     # train model
     # foreach epoch
     for epoch in range(start_epoch, cfg.num_epochs):
         # each epoch includes two phase: train,val
-        train_loss, train_loss_states = train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch)
+        train_loss, train_loss_states = train_model_for_epoch(model, train_dataloader, loss_fn, scheduler, epoch)
         write_metric(train_loss_states, epoch, "train")
         executor.submit(save_checkpoint, model.state_dict(), epoch, best_ap, data_cfg.save_dir)
 

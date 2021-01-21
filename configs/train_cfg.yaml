@@ -7,8 +7,8 @@ data:
   subset: train2
 
 optimizer:
-  lr: 2e-5
-  type: Adam
+  lr: 1e-4
+  type: Adamw
   momentum: 0.9
 
 max_iter: 500
