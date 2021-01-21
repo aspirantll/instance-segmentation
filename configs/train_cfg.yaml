@@ -1,25 +1,23 @@
 data:
-  train_dir:  s3://ll-coco/datasets/cityscapes
-  val_dir:  s3://ll-coco/datasets/cityscapes
-  save_dir: s3://ll-coco/efficient3
+  train_dir:  /media/liulei/Data/cityscapes
+  save_dir: /media/liulei/Data/checkpoints/mask
   dataset: cityscapes
-  batch_size: 8
+  batch_size: 1
   num_classes: -1
   subset: train2
 
 optimizer:
-  lr: 5e-4
-  type: Adam
-  momentum: 0.9
+  lr: 1e-4
+  type: Adamw
 
-max_iter: -1
-num_epochs: 100
+max_iter: 500
+num_epochs: 2000
 save_span: 1000
 seed: 1
 compound_coef: 3
-anchors_scales: '[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]'
-anchors_ratios: '[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)]'
-pretrained_path: #s3://ll-coco/efficient0/efficientdet-d0.pth
-decode_cfg_path: s3://ll-coco/codes/configs/decode_cfg.yaml
-trans_cfg_path: s3://ll-coco/codes/configs/trans_cfg.json
-start_eval_epoch: 300
+anchors_scales: '[1.53125, 5.09375, 0.5625]'
+anchors_ratios: '[(1, 1.36), (1, 1.09), (1, 1.44)]'
+pretrained_path: #/media/liulei/Data/checkpoints/mask/efficientdet-d3.pth
+decode_cfg_path: ./configs/decode_cfg.yaml
+trans_cfg_path: ./configs/trans_cfg.json
+start_eval_epoch: 1000

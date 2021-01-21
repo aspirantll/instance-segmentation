@@ -213,9 +213,7 @@ def train_model_for_epoch(model, train_dataloader, loss_fn, optimizer, epoch):
             outputs = model(inputs)
             loss, loss_stats = loss_fn(outputs, targets)
             # update the weights
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            optimizer.step(loss)
             # network time and update time
             batch_time.update(time.time() - last)
             last = time.time()
