@@ -27,7 +27,6 @@ from models import EfficientSeg, ComposeLoss
 from utils.tranform import CommonTransforms
 from utils.logger import Logger
 from utils.meter import AverageMeter
-from utils.eval_util import evaluate_model
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True
@@ -139,8 +138,8 @@ def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
                 checkpoint = torch.load(weight_path, map_location=device_type)
                 try:
                     ret = model.load_state_dict(checkpoint["state_dict"], strict=False)
-                    ret = optimizer.load_state_dict(checkpoint["optimizer"])
-                    ret = scheduler.load_state_dict(checkpoint["scheduler"])
+                    # ret = optimizer.load_state_dict(checkpoint["optimizer"])
+                    # ret = scheduler.load_state_dict(checkpoint["scheduler"])
                     print(ret)
                 except RuntimeError as e:
                     print('Ignoring ' + str(e) + '"')

@@ -16,8 +16,8 @@ num_epochs: 2000
 save_span: 1000
 seed: 1
 compound_coef: 3
-anchors_scales: '[1.53125, 5.09375, 0.5625]'
-anchors_ratios: '[(1, 1.36), (1, 1.09), (1, 1.44)]'
+anchors_scales: '[5, 2.75, 0.5]'
+anchors_ratios: '[(0.6, 1.5), (1, 1.6), (1, 0.8)]'
 pretrained_path: #/media/liulei/Data/checkpoints/mask/efficientdet-d3.pth
 decode_cfg_path: ./configs/decode_cfg.yaml
 trans_cfg_path: ./configs/trans_cfg.json

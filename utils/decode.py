@@ -376,7 +376,7 @@ def decode_single(ae_mat, dets, info, decode_cfg, device):
     if decode_cfg.draw_flag:
         draw_box(boxes_lt[:, ::-1], boxes_rb[:, ::-1], cls_ids, confs, info)
         draw_instance_map(instance_map, info)
-    return ([e for e in zip(cls_ids, confs, instance_ids)], instance_map)
+    return ([e for e in zip(cls_ids, confs, instance_ids)], instance_map, (cls_ids, boxes, confs))
 
 
 def decode_output(inputs, outs, infos, decode_cfg, device):

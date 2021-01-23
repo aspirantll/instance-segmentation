@@ -26,7 +26,7 @@ from configs import Config, Configer
 from utils.logger import Logger
 from utils import decode
 from utils.tranform import CommonTransforms
-from utils.eval_util import evaluate_model
+from evaluation.eval_util import evaluate_model_instance, evaluate_model_box
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True
@@ -102,7 +102,10 @@ def evaluate_model_by_weights(eval_dataloader, weights_path, logger=None):
     epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
-    evaluate_model(data_cfg, eval_dataloader, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+    if cfg.metric == "instance":
+        evaluate_model_instance(data_cfg, eval_dataloader, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
+    elif cfg.metric == "box":
+        evaluate_model_box(eval_dataloader, model, epoch, decode_cfg, device)
 
 
 def load_weight_paths(weights_dir):
