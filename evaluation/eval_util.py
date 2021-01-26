@@ -20,7 +20,7 @@ from utils import decode
 from evaluation.class_names import cityscapes_classes
 
 
-def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, device, logger, use_salt=True):
+def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, device, logger, metrics):
     decode.device = device
     output_dir = data_cfg.save_dir
 
@@ -37,6 +37,8 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
     num_iter = len(eval_dataloader)
 
     # foreach the images
+    det_results = []
+    det_annotations = []
     for iter_id, eval_data in tqdm(enumerate(eval_dataloader), total=num_iter,
                                    desc="eval for epoch {}".format(epoch)):
         # to device
@@ -45,114 +47,92 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
         # forward the models and loss
         with torch.no_grad():
             outputs = model(inputs)
-            dets, instance_maps = decode.decode_output(inputs, outputs, infos, decode_cfg, device)
+            dets, instance_maps, det_boxes = decode.decode_output(inputs, outputs, infos, decode_cfg, device)
         del inputs
         torch.cuda.empty_cache()
 
-        for i in range(len(dets)):
-            im_name = infos[i][0]
-            img_size = infos[i][1]
-            instance_map = instance_maps[i]
+        if "box" in metrics:
+            # detections
+            for i in range(len(det_boxes)):
+                det = det_boxes[i]
+                det_result = []
+                for j in range(len(cityscapes_classes())):
+                    boxes = np.zeros((0, 5))
+                    for k, box in enumerate(det["rois"]):
+                        if det["class_ids"][k] == j:
+                            boxes = np.append(boxes, np.append(box, det["scores"][k]).reshape((1, 5)), axis=0)
+                    det_result.append(boxes)
+                det_results.append(det_result)
 
-            basename = os.path.splitext(os.path.basename(im_name))[0]
-            txtname = os.path.join(output_dir, basename + 'pred.txt')
-            with open(txtname, 'w') as fid_txt:
-                for j in range(data_cfg.num_classes):
-                    clss = label_names[j]
-                    clss_id = label_ids[j]
+            # annotations
+            for i in range(len(targets[0])):
+                class_map, instance_map = targets[0][i], targets[1][i]
+                class_tensor = torch.from_numpy(class_map)
+                instance_tensor = torch.from_numpy(instance_map)
 
-                    for k in range(len(dets[i])):
-                        center_cls, center_conf, instance_id = dets[i][k]
-                        if center_cls != j:
-                            continue
-                        score = center_conf
-                        mask = instance_map == instance_id
-                        pngname = os.path.join(
-                            'results',
-                            basename + '_' + clss + '_{}.png'.format(k))
-                        # write txt
-                        fid_txt.write('{} {} {}\n'.format(pngname, clss_id, score))
-                        # save mask
-                        cv2.imwrite(os.path.join(output_dir, pngname), mask * 255)
+                annotations = np.zeros((0, 5))
+                pre_instance_ids = instance_tensor.unique()
+                pre_instance_ids = pre_instance_ids[pre_instance_ids != 0].cpu().numpy()
+                for o_j, instance_id in enumerate(pre_instance_ids):
+                    mask = instance_tensor == instance_id
+                    labels = class_tensor[mask].unique().cpu()
+                    assert len(labels) == 1
+                    instance_points = mask.nonzero()
+                    lt = instance_points.min(0)[0].cpu().numpy()[::-1]
+                    rb = instance_points.max(0)[0].cpu().numpy()[::-1]
+                    annotation = np.zeros((1, 5))
+                    annotation[0, 0:2] = lt
+                    annotation[0, 2:4] = rb
+                    annotation[0, 4] = labels[0] - 1
+                    annotations = np.append(annotations, annotation, axis=0)
 
-    os.environ['CITYSCAPES_DATASET'] = data_cfg.eval_dir
-    os.environ['CITYSCAPES_RESULTS'] = output_dir
+                det_annotations.append({
+                    "bboxes": annotations[:, :4],
+                    "labels": annotations[:, 4]
+                })
 
-    # Load the Cityscapes eval script *after* setting the required env vars,
-    # since the script reads their values into global variables (at load time).
-    import cityscapesscripts.evaluation.evalInstanceLevelSemanticLabeling \
-        as cityscapes_eval
+        if "instance" in metrics:
+            for i in range(len(dets)):
+                im_name = infos[i][0]
+                img_size = infos[i][1]
+                instance_map = instance_maps[i]
 
-    logger.write('Evaluating...')
-    cityscapes_eval.main()
+                basename = os.path.splitext(os.path.basename(im_name))[0]
+                txtname = os.path.join(output_dir, basename + 'pred.txt')
+                with open(txtname, 'w') as fid_txt:
+                    for j in range(data_cfg.num_classes):
+                        clss = label_names[j]
+                        clss_id = label_ids[j]
 
+                        for k in range(len(dets[i])):
+                            center_cls, center_conf, instance_id = dets[i][k]
+                            if center_cls != j:
+                                continue
+                            score = center_conf
+                            mask = instance_map == instance_id
+                            pngname = os.path.join(
+                                'results',
+                                basename + '_' + clss + '_{}.png'.format(k))
+                            # write txt
+                            fid_txt.write('{} {} {}\n'.format(pngname, clss_id, score))
+                            # save mask
+                            cv2.imwrite(os.path.join(output_dir, pngname), mask * 255)
+    if "box" in metrics:
+        print("------------------------------------box---------------------------------------")
+        print("epoch:", epoch)
+        print("config:", decode_cfg)
+        print("iou for mAP:", 0.5)
+        eval_map(det_results, det_annotations, iou_thr=0.5)
+        print("iou for mAP:", 0.75)
+        eval_map(det_results, det_annotations, iou_thr=0.75)
+    if "instance" in metrics:
+        os.environ['CITYSCAPES_DATASET'] = data_cfg.eval_dir
+        os.environ['CITYSCAPES_RESULTS'] = output_dir
 
-def evaluate_model_instance(data_cfg, eval_dataloader, model, epoch, dataset, decode_cfg, device, logger):
-    eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, device, logger)
+        # Load the Cityscapes eval script *after* setting the required env vars,
+        # since the script reads their values into global variables (at load time).
+        import cityscapesscripts.evaluation.evalInstanceLevelSemanticLabeling \
+            as cityscapes_eval
 
-
-def evaluate_model_box(eval_dataloader, model, epoch, decode_cfg, device):
-    # eval
-    model.eval()
-    num_iter = len(eval_dataloader)
-
-    det_results = []
-    det_annotations = []
-    # foreach the images
-    for iter_id, eval_data in tqdm(enumerate(eval_dataloader), total=num_iter,
-                                   desc="eval for epoch {}".format(epoch)):
-        # to device
-        inputs, targets, infos = eval_data
-        inputs = inputs.to(device)
-        # forward the models and loss
-        with torch.no_grad():
-            kp_out, regression, classification, anchors = model(inputs)
-            dets = decode.decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
-        del inputs
-        torch.cuda.empty_cache()
-
-        # detections
-        for i in range(len(dets)):
-            det = dets[i]
-            det_result = []
-            for j in range(len(cityscapes_classes())):
-                boxes = np.zeros((0, 5))
-                for k, box in enumerate(det["rois"]):
-                    if det["class_ids"][k] == j:
-                        boxes = np.append(boxes, np.append(box, det["scores"][k]).reshape((1,5)), axis=0)
-                det_result.append(boxes)
-            det_results.append(det_result)
-
-        # annotations
-        for i in range(len(targets)):
-            class_map, instance_map = targets[0][i], targets[1][i]
-            class_tensor = torch.from_numpy(class_map)
-            instance_tensor = torch.from_numpy(instance_map)
-
-            annotations = np.zeros((0, 5))
-            pre_instance_ids = instance_tensor.unique()
-            pre_instance_ids = pre_instance_ids[pre_instance_ids != 0].cpu().numpy()
-            for o_j, instance_id in enumerate(pre_instance_ids):
-                mask = instance_tensor == instance_id
-                labels = class_tensor[mask].unique().cpu()
-                assert len(labels) == 1
-                instance_points = mask.nonzero()
-                lt = instance_points.min(0)[0].cpu().numpy()[::-1]
-                rb = instance_points.max(0)[0].cpu().numpy()[::-1]
-                annotation = np.zeros((1, 5))
-                annotation[0, 0:2] = lt
-                annotation[0, 2:4] = rb
-                annotation[0, 4] = labels[0] - 1
-                annotations = np.append(annotations, annotation, axis=0)
-
-            det_annotations.append({
-                "bboxes": annotations[:, :4],
-                "labels": annotations[:, 4]
-            })
-    print("--------------------------------------------------------------------")
-    print("epoch:", epoch)
-    print("config:", decode_cfg)
-    print("iou for mAP:", 0.5)
-    eval_map(det_results, det_annotations, iou_thr=0.5)
-    print("iou for mAP:", 0.75)
-    eval_map(det_results, det_annotations, iou_thr=0.75)
+        logger.write('Evaluating...')
+        cityscapes_eval.main()

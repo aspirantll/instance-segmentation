@@ -26,7 +26,7 @@ from configs import Config, Configer
 from utils.logger import Logger
 from utils import decode
 from utils.tranform import CommonTransforms
-from evaluation.eval_util import evaluate_model_instance, evaluate_model_box
+from evaluation.eval_util import eval_outputs
 
 # global torch configs for training
 torch.backends.cudnn.enabled = True
@@ -98,14 +98,12 @@ def evaluate_model_by_weights(eval_dataloader, weights_path, logger=None):
     :return:
     """
     # initialize
-    model = EfficientSeg(data_cfg.num_classes, compound_coef=cfg.compound_coef)
+    model = EfficientSeg(data_cfg.num_classes, compound_coef=cfg.compound_coef,
+                         ratios=eval(cfg.anchors_ratios), scales=eval(cfg.anchors_scales))
     epoch = load_state_dict(model, weights_path)
     model = model.to(device)
 
-    if cfg.metric == "instance":
-        evaluate_model_instance(data_cfg, eval_dataloader, model, epoch, data_cfg.dataset, decode_cfg, device, logger)
-    elif cfg.metric == "box":
-        evaluate_model_box(eval_dataloader, model, epoch, decode_cfg, device)
+    eval_outputs(data_cfg, data_cfg.dataset, eval_dataloader, model, epoch, decode_cfg, device, logger, cfg.metrics)
 
 
 def load_weight_paths(weights_dir):
@@ -124,7 +122,7 @@ def eval_weights_dir(weights_dir):
     weight_paths = load_weight_paths(weights_dir)
     logger.write("the num of weights file: {}".format(len(weight_paths)))
     for iter_id, weight_path in enumerate(weight_paths):
-        if iter_id % 2 == 0:
+        if iter_id % 1 == 0:
             evaluate_model_by_weights(eval_dataloader, weight_path, logger)
 
 

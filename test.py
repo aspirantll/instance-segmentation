@@ -110,9 +110,10 @@ def handle_output(inputs, infos, model):
     # forward the models and loss
     with torch.no_grad():
         outputs = model(inputs)
-        dets, instance_maps = decode.decode_output(inputs, outputs, infos, decode_cfg, device)
+        dets, instance_maps, det_boxes = decode.decode_output(inputs, outputs, infos, decode_cfg, device)
         for i in range(len(dets)):
             post_handle(dets[i], instance_maps[i], infos[i])
+
 
 def test():
     """
@@ -121,7 +122,8 @@ def test():
     :return:
     """
     # initialize model
-    model = EfficientSeg(data_cfg.num_classes, compound_coef=cfg.compound_coef)
+    model = EfficientSeg(data_cfg.num_classes, compound_coef=cfg.compound_coef,
+                         ratios=eval(cfg.anchors_ratios), scales=eval(cfg.anchors_scales))
     load_state_dict(model)
     model = model.to(device)
 
