@@ -16,7 +16,15 @@ import numpy as np
 
 from models.lovasz_losses import lovasz_hinge
 from utils.target_generator import generate_all_annotations
-from utils.utils import BBoxTransform, ClipBoxes, postprocess, display, generate_coordinates, convert_corner_to_corner
+from utils.utils import generate_coordinates, convert_corner_to_corner
+
+
+def zero_tensor(device):
+    return torch.tensor(0, dtype=torch.float32).to(device)
+
+
+def to_numpy(tensor):
+    return tensor.cpu().numpy()
 
 
 def calc_iou(a, b):
@@ -36,16 +44,24 @@ def calc_iou(a, b):
     return IoU
 
 
-class DetFocalLoss(nn.Module):
-    def __init__(self):
-        super(DetFocalLoss, self).__init__()
+class InstanceLoss(nn.Module):
+    def __init__(self, device):
+        super(InstanceLoss, self).__init__()
+        self._device = device
+        self._xym = generate_coordinates().to(device)
 
-    def forward(self, classifications, regressions, anchors, annotations, **kwargs):
+    def forward(self, classifications, regressions, anchors, associates, annotations):
         alpha = 0.25
         gamma = 2.0
         batch_size = classifications.shape[0]
         classification_losses = []
         regression_losses = []
+        sigma_losses = []
+        ae_losses = []
+
+        bbox_annotations, instance_ids_list, instance_map_list = annotations
+        b, _, h, w = associates.shape
+        xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
 
         anchor = anchors[0, :, :]  # assuming all image sizes are the same, which it is
         dtype = anchors.dtype
@@ -60,39 +76,25 @@ class DetFocalLoss(nn.Module):
             classification = classifications[j, :, :]
             regression = regressions[j, :, :]
 
-            bbox_annotation = annotations[j]
+            bbox_annotation = bbox_annotations[j]
             bbox_annotation = bbox_annotation[bbox_annotation[:, 4] != -1]
+            instance_map = instance_map_list[j]
+            instance_ids = instance_ids_list[j]
 
             classification = torch.clamp(classification, 1e-4, 1.0 - 1e-4)
 
             if bbox_annotation.shape[0] == 0:
-                if torch.cuda.is_available():
+                alpha_factor = torch.ones_like(classification, device=self._device) * alpha
+                alpha_factor = 1. - alpha_factor
+                focal_weight = classification
+                focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
 
-                    alpha_factor = torch.ones_like(classification) * alpha
-                    alpha_factor = alpha_factor.cuda()
-                    alpha_factor = 1. - alpha_factor
-                    focal_weight = classification
-                    focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
+                bce = -(torch.log(1.0 - classification))
 
-                    bce = -(torch.log(1.0 - classification))
+                cls_loss = focal_weight * bce
 
-                    cls_loss = focal_weight * bce
-
-                    regression_losses.append(torch.tensor(0).to(dtype).cuda())
-                    classification_losses.append(cls_loss.sum())
-                else:
-
-                    alpha_factor = torch.ones_like(classification) * alpha
-                    alpha_factor = 1. - alpha_factor
-                    focal_weight = classification
-                    focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
-
-                    bce = -(torch.log(1.0 - classification))
-
-                    cls_loss = focal_weight * bce
-
-                    regression_losses.append(torch.tensor(0).to(dtype))
-                    classification_losses.append(cls_loss.sum())
+                regression_losses.append(torch.tensor(0).to(dtype).to(self._device))
+                classification_losses.append(cls_loss.sum())
 
                 continue
 
@@ -101,9 +103,7 @@ class DetFocalLoss(nn.Module):
             IoU_max, IoU_argmax = torch.max(IoU, dim=1)
 
             # compute the loss for classification
-            targets = torch.ones_like(classification) * -1
-            if torch.cuda.is_available():
-                targets = targets.cuda()
+            targets = torch.ones_like(classification, device=self._device) * -1
 
             targets[torch.lt(IoU_max, 0.4), :] = 0
 
@@ -116,9 +116,7 @@ class DetFocalLoss(nn.Module):
             targets[positive_indices, :] = 0
             targets[positive_indices, assigned_annotations[positive_indices, 4].long()] = 1
 
-            alpha_factor = torch.ones_like(targets) * alpha
-            if torch.cuda.is_available():
-                alpha_factor = alpha_factor.cuda()
+            alpha_factor = torch.ones_like(targets, device=self._device) * alpha
 
             alpha_factor = torch.where(torch.eq(targets, 1.), alpha_factor, 1. - alpha_factor)
             focal_weight = torch.where(torch.eq(targets, 1.), 1. - classification, classification)
@@ -128,13 +126,18 @@ class DetFocalLoss(nn.Module):
 
             cls_loss = focal_weight * bce
 
-            zeros = torch.zeros_like(cls_loss)
-            if torch.cuda.is_available():
-                zeros = zeros.cuda()
+            zeros = torch.zeros_like(cls_loss, device=self._device)
+
             cls_loss = torch.where(torch.ne(targets, -1.0), cls_loss, zeros)
 
             classification_losses.append(cls_loss.sum() / torch.clamp(num_positive_anchors.to(dtype), min=1.0))
 
+            regression_loss = zero_tensor(device=self._device)
+            sigma_loss = zero_tensor(device=self._device)
+            ae_loss = zero_tensor(device=self._device)
+            positive_argmax = IoU_argmax[positive_indices]
+            positive_regressions = regression[positive_indices]
+            positive_ann_indices = positive_argmax.unique()
             if positive_indices.sum() > 0:
                 assigned_annotations = assigned_annotations[positive_indices, :]
 
@@ -160,215 +163,64 @@ class DetFocalLoss(nn.Module):
                 targets = torch.stack((targets_dy, targets_dx, targets_dh, targets_dw))
                 targets = targets.t()
 
-                regression_diff = torch.abs(targets - regression[positive_indices, :])
+                regression_diff = torch.abs(targets - regression[positive_indices, :4])
 
                 regression_loss = torch.where(
                     torch.le(regression_diff, 1.0 / 9.0),
                     0.5 * 9.0 * torch.pow(regression_diff, 2),
                     regression_diff - 0.5 / 9.0
                 )
-                regression_losses.append(regression_loss.mean())
-            else:
-                if torch.cuda.is_available():
-                    regression_losses.append(torch.tensor(0).to(dtype).cuda())
-                else:
-                    regression_losses.append(torch.tensor(0).to(dtype))
 
-        # debug
-        imgs = kwargs.get('imgs', None)
-        if imgs is not None:
-            regressBoxes = BBoxTransform()
-            clipBoxes = ClipBoxes()
-            obj_list = kwargs.get('obj_list', None)
-            out = postprocess(imgs.detach(),
-                              torch.stack([anchors[0]] * imgs.shape[0], 0).detach(), regressions.detach(),
-                              classifications.detach(),
-                              regressBoxes, clipBoxes,
-                              0.5, 0.3)
-            imgs = imgs.permute(0, 2, 3, 1).cpu().numpy()
-            imgs = ((imgs * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255).astype(np.uint8)
-            imgs = [cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in imgs]
-            display(out, imgs, obj_list, imshow=False, imwrite=True)
+                # associate embedding loss
+                for ann_ind in positive_ann_indices:
+                    in_mask = instance_map.eq(instance_ids[ann_ind]).view(1, h, w)  # 1 x h x w
+                    anchor_indices = positive_argmax==ann_ind
+                    s = positive_regressions[anchor_indices, 4].mean()
 
-        return [torch.stack(classification_losses).mean(dim=0), \
+                    # calculate var loss before exp
+                    sigma_loss = sigma_loss + \
+                               torch.mean(
+                                   torch.pow(positive_regressions[anchor_indices, 4] - s.detach(), 2))
+
+                    s = torch.exp(s)
+                    ann = bbox_annotation[ann_ind]
+                    lt, rb = convert_corner_to_corner(to_numpy(ann[0:2]), to_numpy(ann[2:4]), h, w, 1.5)
+                    selected_spatial_emb = associates[0, :, lt[0]:rb[0], lt[1]:rb[1]]
+                    label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
+                    center_index = to_numpy((ann[0:2] + ann[2:4]) / 2).astype(np.int32)
+                    center = xym_s[:, center_index[0], center_index[1]].view(2, 1, 1)
+                    # calculate gaussian
+                    dist = torch.exp(-1 * torch.sum(
+                        torch.pow(selected_spatial_emb - center, 2) * s, 0, keepdim=True))
+
+                    # apply lovasz-hinge loss
+                    ae_loss = ae_loss + \
+                                    lovasz_hinge(dist * 2 - 1, label_mask)
+
+            regression_losses.append(regression_loss.mean())
+            sigma_losses.append(sigma_loss/max(1, len(positive_ann_indices)))
+            ae_losses.append(ae_loss/max(1, len(positive_ann_indices)))
+
+        return [torch.stack(classification_losses).mean(dim=0),
                 torch.stack(regression_losses).mean(
-                    dim=0) * 50]  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
-
-
-def zero_tensor(device):
-    return torch.tensor(0, dtype=torch.float32).to(device)
-
-
-def sigmoid_(tensor):
-    return torch.clamp(torch.sigmoid(tensor), min=1e-4, max=1 - 1e-4)
-
-
-class KPFocalLoss:
-
-    def __init__(self, device):
-        self._device = device
-
-    def __call__(self, hm_kp, targets):
-        # prepare step
-        kp_mask = torch.from_numpy(targets).to(self._device)
-        return focal_loss(sigmoid_(hm_kp), kp_mask)
-
-
-def focal_loss(pred, gt):
-    ''' Modified focal loss. Exactly the same as CornerNet.
-        Runs faster and costs a little bit more memory
-      Arguments:
-        pred (batch x c x h x w)
-        gt_regr (batch x c x h x w)
-    '''
-    pred = torch.clamp(pred, min=1e-4, max=1 - 1e-4)
-    pos_inds = gt.eq(1).float()
-    neg_inds = gt.lt(1).float()
-
-    neg_weights = torch.pow(1 - gt, 4)
-
-    loss = 0
-
-    pos_loss = torch.log(pred) * torch.pow(1 - pred, 2) * pos_inds
-    neg_loss = torch.log(1 - pred) * torch.pow(pred, 2) * neg_weights * neg_inds
-
-    num_pos = pos_inds.float().sum()
-    n_pos_loss = pos_loss.sum()
-    n_neg_loss = neg_loss.sum()
-
-    if num_pos == 0:
-        loss = loss - n_neg_loss
-    else:
-        loss = loss - (n_pos_loss + n_neg_loss) / num_pos
-
-    if torch.isnan(loss):
-        raise RuntimeError("loss nan")
-    return loss
-
-
-class AELoss(object):
-    def __init__(self, device, weight=1):
-        self._device = device
-        self._weight = weight
-        self._xym = generate_coordinates().to(device)
-
-    def __call__(self, ae, targets):
-        """
-        :param ae:
-        :param targets: (instance_map_list)
-        :return:
-        """
-        # prepare step
-        det_annotations, instance_ids_list, instance_map_list = targets
-        b, c, h, w = ae.shape
-
-        xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
-
-        ae_loss = zero_tensor(self._device)
-        for b_i in range(b):
-            instance_ids = instance_ids_list[b_i]
-            instance_map = instance_map_list[b_i]
-
-            n = len(instance_ids)
-            if n <= 0:
-                continue
-
-            spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
-            sigma = ae[b_i, 2:3]  # n_sigma x h x w
-
-            var_loss = zero_tensor(self._device)
-            instance_loss = zero_tensor(self._device)
-
-            for o_j, instance_id in enumerate(instance_ids):
-                in_mask = instance_map.eq(instance_id).view(1, h, w) # 1 x h x w
-
-                # calculate center of attraction
-                o_lt = det_annotations[b_i, o_j, 0:2][::-1].astype(np.int32)
-                o_rb = det_annotations[b_i, o_j, 2:4][::-1].astype(np.int32)
-
-                # calculate sigma
-                sigma_in = sigma[:, o_lt[0]:o_rb[0], o_lt[1]:o_rb[1]]
-
-                s = sigma_in.mean().view(1, 1, 1)  # n_sigma x 1 x 1
-
-                # calculate var loss before exp
-                var_loss = var_loss + \
-                           torch.mean(
-                               torch.pow(sigma_in - s.detach(), 2))
-                assert not torch.isnan(var_loss)
-
-                s = torch.exp(s)
-
-                # limit 2*box_size mask
-                lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)
-                selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
-                label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
-                center_index = ((o_lt+o_rb)/2).astype(np.int32)
-                center = xym_s[:, center_index[0], center_index[1]].view(2,1,1)
-                # calculate gaussian
-                dist = torch.exp(-1 * torch.sum(
-                    torch.pow(selected_spatial_emb - center, 2) * s, 0, keepdim=True))
-
-                # apply lovasz-hinge loss
-                instance_loss = instance_loss + \
-                                lovasz_hinge(dist * 2 - 1, label_mask)
-
-            ae_loss += (var_loss + instance_loss) / max(n, 1)
-        # compute mean loss
-        return ae_loss / b
-
-
-class TangentLoss(object):
-    def __init__(self, device, weight=1):
-        self._device = device
-        self._weight = weight
-
-    def __call__(self, inputs, targets):
-        # prepare step
-        b, c, h, w = inputs.shape
-        polygons_list, normal_vector_list = targets
-
-        tan_losses = []
-        # foreach every batch
-        for b_i in range(b):
-            # select the active point
-            polygons, normal_vector = polygons_list[b_i], normal_vector_list[b_i]
-            n = len(polygons)
-            tan_loss = zero_tensor(self._device)
-            if n > 0:
-                tan_mat = inputs[b_i]
-                t_polygons = np.vstack(polygons).transpose()
-                t_normals = np.vstack(normal_vector).transpose()
-                normal_tensor = torch.from_numpy(t_normals).to(self._device)
-
-                tan_tensor = tan_mat[:, t_polygons[0, :], t_polygons[1, :]]
-                tan_tensor = tan_tensor / torch.clamp((tan_tensor * tan_tensor).sum(dim=0).sqrt(), min=1e-4)
-                tan_loss += (1 - (normal_tensor * tan_tensor).sum(dim=0)).mean()
-
-            tan_losses.append(tan_loss)
-
-        # compute mean loss
-        tan_loss = torch.stack(tan_losses).mean()
-        return self._weight * tan_loss
+                    dim=0) * 50, torch.stack(sigma_losses).mean(dim=0) * 50, torch.stack(ae_losses).mean(dim=0)]  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
 
 
 class ComposeLoss(nn.Module):
     def __init__(self, device):
         super(ComposeLoss, self).__init__()
         self._device = device
-        self._loss_names = ["cls_loss", "wh_loss", "ae_loss", "total_loss"]
-        self.det_focal_loss = DetFocalLoss()
-        self.ae_loss = AELoss(device)
+        self._loss_names = ["cls_loss", "wh_loss", "sigma_loss", "ae_loss", "total_loss"]
+        self.instance_loss = InstanceLoss(device)
 
     def forward(self, outputs, targets):
         # unpack the output
         kp_out, regression, classification, anchors = outputs
-        det_annotations, instance_ids_list, instance_map_list = generate_all_annotations(kp_out[0].shape, targets, self._device)
+        det_annotations, instance_ids_list, instance_map_list = generate_all_annotations(kp_out.shape, targets, self._device)
 
         losses = []
-        losses.extend(self.det_focal_loss(classification, regression, anchors,
-                                          torch.from_numpy(det_annotations).to(self._device)))
-        losses.append(self.ae_loss(kp_out[0], (det_annotations, instance_ids_list, instance_map_list)))
+        losses.extend(self.instance_loss(classification, regression, anchors, kp_out,
+                                         (torch.from_numpy(det_annotations).to(self._device), instance_ids_list, instance_map_list)))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()

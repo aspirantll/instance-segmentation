@@ -17,17 +17,13 @@ import torch
 import torch.nn as nn
 from torchvision.ops.boxes import batched_nms
 import numpy as np
-from utils.visualize import visualize_kp, visualize_box
+from utils.visualize import visualize_box
 from utils import parell_util
 
 base_dir = r""
 target_size = 1
 
 xym = generate_coordinates()
-
-
-def compute_scale(info):
-    return target_size
 
 
 def to_numpy(tensor):

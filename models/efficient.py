@@ -354,7 +354,7 @@ class Regressor(nn.Module):
         self.bn_list = nn.ModuleList(
             [nn.ModuleList([nn.BatchNorm2d(in_channels, momentum=0.01, eps=1e-3) for i in range(num_layers)]) for j in
              range(pyramid_levels)])
-        self.header = SeparableConvBlock(in_channels, num_anchors * 4, norm=False, activation=False)
+        self.header = SeparableConvBlock(in_channels, num_anchors * 5, norm=False, activation=False)
         self.swish = MemoryEfficientSwish() if not onnx_export else Swish()
 
     def forward(self, inputs):
@@ -367,7 +367,7 @@ class Regressor(nn.Module):
             feat = self.header(feat)
 
             feat = feat.permute(0, 2, 3, 1)
-            feat = feat.contiguous().view(feat.shape[0], -1, 4)
+            feat = feat.contiguous().view(feat.shape[0], -1, 5)
 
             feats.append(feat)
 
@@ -468,78 +468,6 @@ def variance_scaling_(tensor, gain=1.):
     return _no_grad_normal_(tensor, 0., std)
 
 
-def double_conv(in_channels, out_channels):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True),
-        nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True)
-    )
-
-
-def up_conv(in_channels, out_channels):
-    return nn.ConvTranspose2d(
-        in_channels, out_channels, kernel_size=2, stride=2
-    )
-
-
-class EfficientDecoder(nn.Module):
-    def __init__(self, channels, headers, concat_input=True):
-        super().__init__()
-        self.headers = headers
-        self.concat_input = concat_input
-
-        self.up_conv1 = up_conv(channels[0], 256)
-        self.double_conv1 = double_conv(channels[1]+256, 256)
-        self.up_conv2 = up_conv(256, 128)
-        self.double_conv2 = double_conv(channels[2]+128, 128)
-        self.up_conv3 = up_conv(128, 64)
-        self.double_conv3 = double_conv(channels[3]+64, 64)
-        self.up_conv4 = up_conv(64, 32)
-        self.double_conv4 = double_conv(channels[4]+32, 32)
-
-        if self.concat_input:
-            self.up_conv_input = up_conv(32, 16)
-            self.double_conv_input = double_conv(3+16, 16)
-
-        for header, channel in self.headers.items():
-            head_conv = nn.Conv2d(16, channel, kernel_size=1)
-            self.__setattr__(header, head_conv)
-
-    def forward(self, input_, blocks):
-        x = blocks[-1]
-
-        x = self.up_conv1(x)
-        x = torch.cat([x, blocks[-2]], dim=1)
-        x = self.double_conv1(x)
-
-        x = self.up_conv2(x)
-        x = torch.cat([x, blocks[-3]], dim=1)
-        x = self.double_conv2(x)
-
-        x = self.up_conv3(x)
-        x = torch.cat([x, blocks[-4]], dim=1)
-        x = self.double_conv3(x)
-
-        x = self.up_conv4(x)
-        x = torch.cat([x, blocks[-5]], dim=1)
-        x = self.double_conv4(x)
-
-        if self.concat_input:
-            x = self.up_conv_input(x)
-            x = torch.cat([x, input_], dim=1)
-            x = self.double_conv_input(x)
-
-        outs = []
-        for header in self.headers.keys():
-            header_conv = self.__getattr__(header)
-            outs.append(header_conv(x))
-
-        return tuple(outs)
-
-
 class EfficientSeg(nn.Module):
     def __init__(self, num_classes=80, compound_coef=0, load_weights=False, **kwargs):
         super(EfficientSeg, self).__init__()
@@ -592,19 +520,22 @@ class EfficientSeg(nn.Module):
 
         self.backbone_net = EfficientNet(self.backbone_compound_coef[compound_coef], load_weights)
 
-        channels = {
-            0: [320, 112, 40, 24, 16],
-            1: [320, 112, 40, 24, 16],
-            2: [352, 120, 48, 24, 16],
-            3: [384, 136, 48, 32, 24],
-            4: [448, 160, 56, 32, 24],
-            5: [512, 176, 64],
-            6: [576, 200, 72],
-            7: [576, 200, 72],
-            8: [640, 224, 80],
-        }
+        num_channels = self.fpn_num_filters[self.compound_coef]
+        self.swish = MemoryEfficientSwish()
+        self.p1_down = nn.Sequential(
+                Conv2dStaticSamePadding(32, 24, 1),
+                nn.BatchNorm2d(24, momentum=0.01, eps=1e-3),
+            )
+        self.p2_down = nn.Sequential(
+                Conv2dStaticSamePadding(num_channels, 32, 1),
+                nn.BatchNorm2d(32, momentum=0.01, eps=1e-3),
+            )
+        self.p1_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.p2_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.p1_conv = SeparableConvBlock(24)
+        self.p2_conv = SeparableConvBlock(32)
 
-        self.kp_header = EfficientDecoder(channels[compound_coef], {"ae": 3})
+        self.kp_header = nn.ConvTranspose2d(24, 2, 2, stride=2, padding=0, output_padding=0, bias=True)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -612,16 +543,18 @@ class EfficientSeg(nn.Module):
                 m.eval()
 
     def forward(self, inputs):
-        blocks = self.backbone_net(inputs)
+        p1, p2, p3, p4, p5 = self.backbone_net(inputs)
 
-        features = blocks[2:5]
+        features = (p3, p4, p5)
         features = self.bifpn(features)
 
         regression = self.regressor(features)
         classification = self.classifier(features)
         anchors = self.anchors(inputs, inputs.dtype)
 
-        kp_out = self.kp_header(inputs, blocks)
+        p2_out = self.p2_conv(self.swish(p2 + self.p2_upsample(self.p2_down(features[0]))))
+        p1_out = self.p1_conv(self.swish(p1 + self.p1_upsample(self.p1_down(p2_out))))
+        kp_out = self.kp_header(p1_out)
         return kp_out, regression, classification, anchors
 
     def init_backbone(self, path):

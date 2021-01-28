@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser(description="generateCrop")
 # add arguments
 parser.add_argument("--data_root", help="the root dir of cityscape", dest="data_root", default="", type=str)
 parser.add_argument("--crop_size", help="the size of crop", dest="crop_size", default=512, type=int)
-parser.add_argument("--target", help="the target of crop", dest="target", default="train2", type=str)
+parser.add_argument("--target", help="the target of crop", dest="target", default="val2", type=str)
 # parse args
 args = parser.parse_args()
 
@@ -23,9 +23,9 @@ args = parser.parse_args()
 def process(tup):
     im, inst = tup
 
-    image_path = os.path.splitext(os.path.relpath(im, os.path.join(IMAGE_DIR, 'train')))[0]
+    image_path = os.path.splitext(os.path.relpath(im, os.path.join(IMAGE_DIR, 'val')))[0]
     image_path = os.path.join(IMAGE_DIR, CROP_TARGET, image_path)
-    instance_path = os.path.splitext(os.path.relpath(inst, os.path.join(INSTANCE_DIR, 'train')))[0]
+    instance_path = os.path.splitext(os.path.relpath(inst, os.path.join(INSTANCE_DIR, 'val')))[0]
     instance_path = os.path.join(INSTANCE_DIR, CROP_TARGET, instance_path)
 
     try:  # can't use 'exists' because of threads
@@ -71,9 +71,9 @@ if __name__ == '__main__':
 
     OBJ_ID = 26
     # load images/instances
-    images = glob.glob(os.path.join(IMAGE_DIR, 'train', '*/*.png'))
+    images = glob.glob(os.path.join(IMAGE_DIR, 'val', '*/*.png'))
     images.sort()
-    instances = glob.glob(os.path.join(INSTANCE_DIR, 'train', '*/*instanceIds.png'))
+    instances = glob.glob(os.path.join(INSTANCE_DIR, 'val', '*/*instanceIds.png'))
     instances.sort()
     process((images[0], instances[0]))
 

@@ -28,10 +28,6 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
     label_names = [label[1] for label in eval_labels]
     label_ids = [label[2] for label in eval_labels]
 
-    results_dir = os.path.join(output_dir, 'results')
-    if not os.path.exists(results_dir):
-        os.mkdir(results_dir)
-
     # eval
     model.eval()
     num_iter = len(eval_dataloader)
@@ -98,7 +94,7 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
                 instance_map = instance_maps[i]
 
                 basename = os.path.splitext(os.path.basename(im_name))[0]
-                txtname = os.path.join(output_dir, basename + 'pred.txt')
+                txtname = os.path.join(output_dir, basename + '.txt')
                 with open(txtname, 'w') as fid_txt:
                     for j in range(data_cfg.num_classes):
                         clss = label_names[j]
@@ -110,9 +106,7 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
                                 continue
                             score = center_conf
                             mask = instance_map == instance_id
-                            pngname = os.path.join(
-                                'results',
-                                basename + '_' + clss + '_{}.png'.format(k))
+                            pngname = os.path.join(basename + '_' + clss + '_{}.png'.format(k))
                             # write txt
                             fid_txt.write('{} {} {}\n'.format(pngname, clss_id, score))
                             # save mask
