@@ -9,7 +9,6 @@ __copyright__ = \
 __authors__ = ""
 __version__ = "1.0.0"
 
-import cv2
 import torch
 import torch.nn as nn
 import numpy as np
@@ -171,23 +170,30 @@ class InstanceLoss(nn.Module):
                     regression_diff - 0.5 / 9.0
                 )
 
+                spatial_emb = torch.tanh(associates[0:2, :, :]) + xym_s
+
                 # associate embedding loss
                 for ann_ind in positive_ann_indices:
                     in_mask = instance_map.eq(instance_ids[ann_ind]).view(1, h, w)  # 1 x h x w
+
                     anchor_indices = positive_argmax==ann_ind
-                    s = positive_regressions[anchor_indices, 4].mean()
 
                     # calculate var loss before exp
+                    ann = to_numpy(bbox_annotation[ann_ind])
+                    o_lt = ann[0:2][::-1].astype(np.int32)
+                    o_rb = ann[2:4][::-1].astype(np.int32)
+
+                    o_wh = to_numpy(xym_s[:, o_rb[0], o_rb[1]] - xym_s[:, o_lt[0], o_lt[1]])
+                    target_sigma = 0.32663425997828094 - np.log(np.dot(o_wh, o_wh))
                     sigma_loss = sigma_loss + \
                                torch.mean(
-                                   torch.pow(positive_regressions[anchor_indices, 4] - s.detach(), 2))
+                                   torch.pow(positive_regressions[anchor_indices, 4] - target_sigma, 2))
 
-                    s = torch.exp(s)
-                    ann = bbox_annotation[ann_ind]
-                    lt, rb = convert_corner_to_corner(to_numpy(ann[0:2]), to_numpy(ann[2:4]), h, w, 1.5)
-                    selected_spatial_emb = associates[0, :, lt[0]:rb[0], lt[1]:rb[1]]
+                    s = torch.exp(positive_regressions[anchor_indices, 4].mean())
+                    lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)
+                    selected_spatial_emb = spatial_emb[0, :, lt[0]:rb[0], lt[1]:rb[1]]
                     label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
-                    center_index = to_numpy((ann[0:2] + ann[2:4]) / 2).astype(np.int32)
+                    center_index = ((o_lt + o_rb) / 2).astype(np.int32)
                     center = xym_s[:, center_index[0], center_index[1]].view(2, 1, 1)
                     # calculate gaussian
                     dist = torch.exp(-1 * torch.sum(
@@ -203,7 +209,7 @@ class InstanceLoss(nn.Module):
 
         return [torch.stack(classification_losses).mean(dim=0),
                 torch.stack(regression_losses).mean(
-                    dim=0) * 50, torch.stack(sigma_losses).mean(dim=0) * 50, torch.stack(ae_losses).mean(dim=0)]  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
+                    dim=0) * 50, torch.stack(sigma_losses).mean(dim=0), torch.stack(ae_losses).mean(dim=0)]  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
 
 
 class ComposeLoss(nn.Module):

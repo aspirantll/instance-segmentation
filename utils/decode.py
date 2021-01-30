@@ -55,7 +55,7 @@ def smooth_dist(dist):
     return nn.functional.conv2d(dist.unsqueeze(0).unsqueeze(0), weights, padding=1).squeeze(0).squeeze(0)
 
 
-def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, device):
+def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, boxes_sigma, device):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -68,7 +68,6 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, devic
     h, w = ae_mat.shape[1:]
     xym_s = xym[:, 0:h, 0:w].contiguous().to(device)
     spatial_emb = torch.tanh(ae_mat[0:2, :, :]) + xym_s
-    sigma = ae_mat[2:3, :, :]
     center_indexes = ((boxes_lt+boxes_rb)/2).astype(np.int32)
     boxes_wh = (boxes_rb-boxes_lt).astype(np.int32)
 
@@ -78,6 +77,7 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, devic
     for i in range(objs_num):
         center_index = center_indexes[i]
         box_wh = boxes_wh[i]
+        sigma = boxes_sigma[i]
 
         if box_wh[0] < 2 or box_wh[1] < 2:
             continue
@@ -85,7 +85,7 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, devic
         center = xym_s[:, center_index[0], center_index[1]].view(2, 1, 1)
         lt, rb = generate_corner(center_index, box_wh, h, w, 1.0)
         selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
-        s = torch.exp(sigma[:, center_index[0], center_index[1]])
+        s = np.exp(sigma)
         dist = torch.exp(-1 * torch.sum(torch.pow(selected_spatial_emb -
                                                   center, 2) * s, 0, keepdim=True)).squeeze()
 
@@ -134,9 +134,10 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
     regressBoxes = BBoxTransform()
     clipBoxes = ClipBoxes()
 
-    transformed_anchors = regressBoxes(anchors, regression)
+    transformed_anchors = regressBoxes(anchors, regression[:, :, :4])
     transformed_anchors = clipBoxes(transformed_anchors, x)
-    scores = torch.max(classification, dim=2, keepdim=True)[0]
+    scores, score_arg_max = torch.max(classification, dim=2, keepdim=True)
+    scores = scores*(score_arg_max != 0).float()
     scores_over_thresh = (scores > threshold)[:, :, 0]
 
     dets = []
@@ -146,11 +147,13 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
                 'rois': np.array(()),
                 'class_ids': np.array(()),
                 'scores': np.array(()),
+                'sigmas': np.array(())
             })
             continue
 
         classification_per = classification[i, scores_over_thresh[i, :], ...].permute(1, 0)
         transformed_anchors_per = transformed_anchors[i, scores_over_thresh[i, :], ...]
+        sigma_per = regression[i, scores_over_thresh[i, :], 4]
         scores_per = scores[i, scores_over_thresh[i, :], ...]
         scores_, classes_ = classification_per.max(dim=0)
         anchors_nms_idx = batched_nms(transformed_anchors_per, scores_per[:, 0], classes_, iou_threshold=iou_threshold)
@@ -159,30 +162,33 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
             classes_ = classes_[anchors_nms_idx]
             scores_ = scores_[anchors_nms_idx]
             boxes_ = transformed_anchors_per[anchors_nms_idx, :]
+            sigmas_ = sigma_per[anchors_nms_idx]
 
             dets.append({
                 'rois': boxes_.cpu().numpy(),
                 'class_ids': classes_.cpu().numpy(),
                 'scores': scores_.cpu().numpy(),
+                'sigmas': sigmas_.cpu().numpy()
             })
         else:
             dets.append({
                 'rois': np.array(()),
                 'class_ids': np.array(()),
                 'scores': np.array(()),
+                'sigmas': np.array(())
             })
 
     return dets
 
 
 def decode_single(ae_mat, dets, info, decode_cfg, device):
-    cls_ids, boxes, confs = dets["class_ids"], dets["rois"], dets["scores"]
+    cls_ids, boxes, confs, sigmas = dets["class_ids"], dets["rois"], dets["scores"], dets["sigmas"]
     if len(cls_ids) == 0:
         return ([], [])
     boxes_lt = boxes[:, :2][:, ::-1]
     boxes_rb = boxes[:, 2:][:, ::-1]
 
-    cls_ids, confs, instance_ids, instance_map = group_instance_map(ae_mat, cls_ids, confs, boxes_lt, boxes_rb, device)
+    cls_ids, confs, instance_ids, instance_map = group_instance_map(ae_mat, cls_ids, confs, boxes_lt, boxes_rb, sigmas, device)
     if decode_cfg.draw_flag:
         draw_box(boxes_lt[:, ::-1], boxes_rb[:, ::-1], cls_ids, confs, info)
         draw_instance_map(instance_map, info)
@@ -203,6 +209,6 @@ def decode_output(inputs, outs, infos, decode_cfg, device):
     kp_out, regression, classification, anchors = outs
     det_boxes = decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
 
-    dets = parell_util.multi_apply(decode_single, kp_out[0], det_boxes, infos, decode_cfg=decode_cfg, device=device)
+    dets = parell_util.multi_apply(decode_single, kp_out, det_boxes, infos, decode_cfg=decode_cfg, device=device)
 
     return dets[0], dets[1], det_boxes

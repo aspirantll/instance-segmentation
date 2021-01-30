@@ -15,6 +15,7 @@ import data
 from tqdm import tqdm
 import numpy as np
 
+from data.cityscapes import label_ids, label_names
 from evaluation import eval_map
 from utils import decode
 from evaluation.class_names import cityscapes_classes
@@ -23,10 +24,6 @@ from evaluation.class_names import cityscapes_classes
 def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, device, logger, metrics):
     decode.device = device
     output_dir = data_cfg.save_dir
-
-    eval_labels = data.get_eval_labels(dataset)
-    label_names = [label[1] for label in eval_labels]
-    label_ids = [label[2] for label in eval_labels]
 
     # eval
     model.eval()

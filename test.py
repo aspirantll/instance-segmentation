@@ -75,8 +75,6 @@ if use_cuda:
 
 Logger.init_logger(data_cfg)
 logger = Logger.get_logger()
-eval_labels = data.get_eval_labels("cityscapes")
-label_names = [label[1] for label in eval_labels]
 
 
 def load_state_dict(model):

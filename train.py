@@ -67,10 +67,10 @@ if data_cfg.dataset not in data.datasetBuildersMap:
     raise Exception("the dataset is not accepted.")
 
 # set seed
-np.random.seed(cfg.seed)
-torch.random.manual_seed(cfg.seed)
-if use_cuda:
-    torch.cuda.manual_seed_all(cfg.seed)
+# np.random.seed(cfg.seed)
+# torch.random.manual_seed(cfg.seed)
+# if use_cuda:
+#     torch.cuda.manual_seed_all(cfg.seed)
 
 Logger.init_logger(data_cfg, type="simple")
 logger = Logger.get_logger()
@@ -122,6 +122,8 @@ def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
     :param save_dir:
     :return:
     """
+    model.init_weight()
+
     if pretrained is not None:
         state_dict = torch.load(pretrained)
         try:
@@ -145,7 +147,6 @@ def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
                     print('Ignoring ' + str(e) + '"')
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
-                model.init_weight()
                 save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)
                 return start_epoch+1
     # model.init_weight()

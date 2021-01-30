@@ -11,12 +11,13 @@ __version__ = "1.0.0"
 
 import abc
 
+
 def is_train_phase(phase):
-    return phase == "train"
+    return "train" in phase
 
 
 def is_val_phase(phase):
-    return phase == "val"
+    return "val" in phase
 
 
 class DatasetBuilder(object):
