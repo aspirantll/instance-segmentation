@@ -77,7 +77,7 @@ def get_dataloader(batch_size, dataset_type, data_dir, phase, transforms=None, n
         if is_train_phase(phase):
             # initialize sampler
             if random:
-                return torch.utils.data.DataLoader(dataset, shuffle=True, drop_last=True, collate_fn=collate_fn_with_label
+                return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, collate_fn=collate_fn_with_label
                                                    , num_workers=num_workers)
             else:
                 return torch.utils.data.DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn_with_label
