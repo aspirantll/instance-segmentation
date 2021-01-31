@@ -5,12 +5,12 @@ data:
   dataset: dir
   batch_size: 1
   input_size: (512, 1024)
-  num_classes: 8
+  num_classes: 9
 
 seed: 1
 compound_coef: 3
 anchors_scales: '[5, 2.75, 0.5]'
 anchors_ratios: '[(0.6, 1.5), (1, 1.6), (1, 0.8)]'
-weights_path: /media/liulei/Data/checkpoints/mask/efficient_weights_00000030.pth
+weights_path: /media/liulei/Data/checkpoints/mask/efficient_weights_00000021.pth
 decode_cfg_path: ./configs/decode_cfg.yaml
 trans_cfg_path: ./configs/trans_cfg.json

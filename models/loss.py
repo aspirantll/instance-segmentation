@@ -92,8 +92,10 @@ class InstanceLoss(nn.Module):
 
                 cls_loss = focal_weight * bce
 
-                regression_losses.append(torch.tensor(0).to(dtype).to(self._device))
+                regression_losses.append(zero_tensor(self._device))
                 classification_losses.append(cls_loss.sum())
+                sigma_losses.append(zero_tensor(self._device))
+                ae_losses.append(zero_tensor(self._device))
 
                 continue
 
@@ -183,13 +185,13 @@ class InstanceLoss(nn.Module):
                     o_lt = ann[0:2][::-1].astype(np.int32)
                     o_rb = ann[2:4][::-1].astype(np.int32)
 
-                    o_wh = to_numpy(xym_s[:, o_rb[0], o_rb[1]] - xym_s[:, o_lt[0], o_lt[1]])
-                    target_sigma = 0.32663425997828094 - np.log(np.dot(o_wh, o_wh))
+                    target_sigma = positive_regressions[anchor_indices, 4].mean()
+
                     sigma_loss = sigma_loss + \
                                torch.mean(
-                                   torch.pow(positive_regressions[anchor_indices, 4] - target_sigma, 2))
+                                   torch.pow(positive_regressions[anchor_indices, 4] - target_sigma.detach(), 2))
 
-                    s = torch.exp(positive_regressions[anchor_indices, 4].mean())
+                    s = torch.exp(target_sigma)
                     lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)
                     selected_spatial_emb = spatial_emb[0, :, lt[0]:rb[0], lt[1]:rb[1]]
                     label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
