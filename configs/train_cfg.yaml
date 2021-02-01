@@ -18,7 +18,7 @@ seed: 1
 compound_coef: 3
 anchors_scales: '[5, 2.75, 0.5]'
 anchors_ratios: '[(0.6, 1.5), (1, 1.6), (1, 0.8)]'
-pretrained_path: /media/liulei/Data/checkpoints/mask/pre_city.pth
+pretrained_path: /media/liulei/Data/checkpoints/mask/city_1.pth
 decode_cfg_path: ./configs/decode_cfg.yaml
 trans_cfg_path: ./configs/trans_cfg.json
 start_eval_epoch: 1000

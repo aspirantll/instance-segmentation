@@ -55,7 +55,6 @@ class InstanceLoss(nn.Module):
         batch_size = classifications.shape[0]
         classification_losses = []
         regression_losses = []
-        sigma_losses = []
         ae_losses = []
 
         bbox_annotations, instance_ids_list, instance_map_list = annotations
@@ -94,7 +93,6 @@ class InstanceLoss(nn.Module):
 
                 regression_losses.append(zero_tensor(self._device))
                 classification_losses.append(cls_loss.sum())
-                sigma_losses.append(zero_tensor(self._device))
                 ae_losses.append(zero_tensor(self._device))
 
                 continue
@@ -191,6 +189,8 @@ class InstanceLoss(nn.Module):
                                torch.mean(
                                    torch.pow(positive_regressions[anchor_indices, 4] - target_sigma.detach(), 2))
 
+                    # o_wh = xym_s[:, o_rb[0], o_rb[1]] - xym_s[:, o_lt[0], o_lt[1]]
+                    # s = torch.sigmoid(target_sigma)/torch.dot(o_wh, o_wh)
                     s = torch.exp(target_sigma)
                     lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)
                     selected_spatial_emb = spatial_emb[0, :, lt[0]:rb[0], lt[1]:rb[1]]
@@ -206,19 +206,18 @@ class InstanceLoss(nn.Module):
                                     lovasz_hinge(dist * 2 - 1, label_mask)
 
             regression_losses.append(regression_loss.mean())
-            sigma_losses.append(sigma_loss/max(1, len(positive_ann_indices)))
-            ae_losses.append(ae_loss/max(1, len(positive_ann_indices)))
+            ae_losses.append((sigma_loss+ae_loss)/max(1, len(positive_ann_indices)))
 
         return [torch.stack(classification_losses).mean(dim=0),
                 torch.stack(regression_losses).mean(
-                    dim=0) * 50, torch.stack(sigma_losses).mean(dim=0), torch.stack(ae_losses).mean(dim=0)]  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
+                    dim=0) * 50, torch.stack(ae_losses).mean(dim=0)]  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
 
 
 class ComposeLoss(nn.Module):
     def __init__(self, device):
         super(ComposeLoss, self).__init__()
         self._device = device
-        self._loss_names = ["cls_loss", "wh_loss", "sigma_loss", "ae_loss", "total_loss"]
+        self._loss_names = ["cls_loss", "wh_loss", "ae_loss", "total_loss"]
         self.instance_loss = InstanceLoss(device)
 
     def forward(self, outputs, targets):
