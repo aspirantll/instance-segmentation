@@ -122,7 +122,7 @@ def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
     :param save_dir:
     :return:
     """
-    model.init_weight()
+    # model.init_weight()
 
     if pretrained is not None:
         state_dict = torch.load(pretrained)
