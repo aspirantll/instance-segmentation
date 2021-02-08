@@ -1,5 +1,5 @@
 data:
-  test_dir: /media/liulei/Data/cityscapes/leftImg8bit/train2
+  test_dir: /media/liulei/Data/cityscapes/leftImg8bit/val
   test_image:
   save_dir: /media/liulei/Data/checkpoints/mask/test
   dataset: dir
@@ -11,6 +11,6 @@ seed: 1
 compound_coef: 3
 anchors_scales: '[5, 2.75, 0.5]'
 anchors_ratios: '[(0.6, 1.5), (1, 1.6), (1, 0.8)]'
-weights_path: /media/liulei/Data/checkpoints/mask/efficient_weights_00000042.pth
+weights_path: /media/liulei/Data/checkpoints/mask/efficient_weights_00000060.pth
 decode_cfg_path: ./configs/decode_cfg.yaml
 trans_cfg_path: ./configs/trans_cfg.json

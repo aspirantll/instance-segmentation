@@ -9,21 +9,25 @@ __copyright__ = \
 __authors__ = ""
 __version__ = "1.0.0"
 import os
+import shutil
+
 import cv2
 import torch
-import data
 from tqdm import tqdm
 import numpy as np
 
 from data.cityscapes import label_ids, label_names
 from evaluation import eval_map
 from utils import decode
-from evaluation.class_names import cityscapes_classes
 
 
 def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, device, logger, metrics):
     decode.device = device
-    output_dir = data_cfg.save_dir
+    output_dir = os.path.join(data_cfg.save_dir, 'results_' + str(epoch))
+
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.mkdir(output_dir)
 
     # eval
     model.eval()
@@ -49,7 +53,7 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
             for i in range(len(det_boxes)):
                 det = det_boxes[i]
                 det_result = []
-                for j in range(len(cityscapes_classes())):
+                for j in range(1, data_cfg.num_classes):
                     boxes = np.zeros((0, 5))
                     for k, box in enumerate(det["rois"]):
                         if det["class_ids"][k] == j:
@@ -76,7 +80,7 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
                     annotation = np.zeros((1, 5))
                     annotation[0, 0:2] = lt
                     annotation[0, 2:4] = rb
-                    annotation[0, 4] = labels[0] - 1
+                    annotation[0, 4] = labels[0] - 2
                     annotations = np.append(annotations, annotation, axis=0)
 
                 det_annotations.append({
@@ -93,7 +97,7 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
                 basename = os.path.splitext(os.path.basename(im_name))[0]
                 txtname = os.path.join(output_dir, basename + '.txt')
                 with open(txtname, 'w') as fid_txt:
-                    for j in range(data_cfg.num_classes):
+                    for j in range(1, data_cfg.num_classes):
                         clss = label_names[j]
                         clss_id = label_ids[j]
 
@@ -113,9 +117,9 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
         print("epoch:", epoch)
         print("config:", decode_cfg)
         print("iou for mAP:", 0.5)
-        eval_map(det_results, det_annotations, iou_thr=0.5)
+        eval_map(det_results, det_annotations, dataset=dataset, iou_thr=0.5)
         print("iou for mAP:", 0.75)
-        eval_map(det_results, det_annotations, iou_thr=0.75)
+        eval_map(det_results, det_annotations, dataset=dataset, iou_thr=0.75)
     if "instance" in metrics:
         os.environ['CITYSCAPES_DATASET'] = data_cfg.eval_dir
         os.environ['CITYSCAPES_RESULTS'] = output_dir

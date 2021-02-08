@@ -14,15 +14,10 @@ label_ids = [-10, 24, 25, 26, 27, 28, 31, 32, 33]
 
 num_cls = len(label_names)
 IMAGE_EXTENSIONS = ['.jpg', '.png']
-NP_EXTENSIONS = ['.npy', '.npz']
 
 
 def is_image(filename):
     return any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS)
-
-
-def is_np(filename):
-    return any(filename.endswith(ext) for ext in NP_EXTENSIONS)
 
 
 def is_label(filename):
