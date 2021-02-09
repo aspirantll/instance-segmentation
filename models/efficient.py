@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 from torch.nn.init import _calculate_fan_in_and_fan_out, _no_grad_normal_
 import numpy as np
 
@@ -468,86 +469,123 @@ def variance_scaling_(tensor, gain=1.):
     return _no_grad_normal_(tensor, 0., std)
 
 
-class SELayer(nn.Module):
-    def __init__(self, channel, reduction=16):
-        super(SELayer, self).__init__()
+class ChannelGate2d(nn.Module):
+    """
+    Channel Squeeze module
+    """
+
+    def __init__(self, channels):
+        super().__init__()
+        self.squeeze = nn.Conv2d(channels, 1, kernel_size=1, padding=0)
+
+    def forward(self, x: torch.Tensor):  # skipcq: PYL-W0221
+        module_input = x
+        x = self.squeeze(x)
+        x = x.sigmoid()
+        return module_input * x
+
+
+class SpatialGate2d(nn.Module):
+    """
+    Spatial squeeze module
+    """
+
+    def __init__(self, channels, reduction=None, squeeze_channels=None):
+        """
+        Instantiate module
+        :param channels: Number of input channels
+        :param reduction: Reduction factor
+        :param squeeze_channels: Number of channels in squeeze block.
+        """
+        super().__init__()
+        assert reduction or squeeze_channels, "One of 'reduction' and 'squeeze_channels' must be set"
+        assert not (reduction and squeeze_channels), "'reduction' and 'squeeze_channels' are mutually exclusive"
+
+        if squeeze_channels is None:
+            squeeze_channels = max(1, channels // reduction)
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
+        self.squeeze = nn.Conv2d(channels, squeeze_channels, kernel_size=1)
+        self.expand = nn.Conv2d(squeeze_channels, channels, kernel_size=1)
+
+    def forward(self, x: torch.Tensor):  # skipcq: PYL-W0221
+        module_input = x
+        x = self.avg_pool(x)
+        x = self.squeeze(x)
+        x = F.elu(x, inplace=True)
+        x = self.expand(x)
+        x = x.sigmoid()
+        return module_input * x
+
+
+class ChannelSpatialGate2d(nn.Module):
+    """
+    Concurrent Spatial and Channel Squeeze & Excitation
+    """
+
+    def __init__(self, channels, reduction=4):
+        super().__init__()
+        self.channel_gate = ChannelGate2d(channels)
+        self.spatial_gate = SpatialGate2d(channels, reduction=reduction)
+
+    def forward(self, x):  # skipcq: PYL-W0221
+        return self.channel_gate(x) + self.spatial_gate(x)
+
+
+class UpConv(nn.Module):
+    def __init__(self, in_channels, temp_channel, out_channels):
+        super(UpConv, self).__init__()
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels, temp_channel, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(temp_channel),
+            nn.ELU(inplace=True)
         )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(temp_channel, out_channels, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ELU(inplace=True)
+        )
+        self.sc_gate = ChannelSpatialGate2d(out_channels)
 
-    def forward(self, x):
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
-
-
-def double_conv(in_channels, out_channels):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True),
-        nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-        nn.BatchNorm2d(out_channels),
-        SELayer(out_channels),
-        nn.ReLU(inplace=True)
-    )
-
-
-def up_conv(in_channels, out_channels):
-    return nn.ConvTranspose2d(
-        in_channels, out_channels, kernel_size=2, stride=2
-    )
+    def forward(self, x, e=None):
+        x = self.upsample(x)
+        if e is not None:
+            x = torch.cat([x, e], 1)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return self.sc_gate(x)
 
 
 class EfficientDecoder(nn.Module):
-    def __init__(self, channels, out_channel, concat_input=True):
+    def __init__(self, channels, out_channel):
         super().__init__()
-        self.concat_input = concat_input
+        self.up_conv1 = UpConv(channels[0] + channels[1], 256, 32)
+        self.up_conv2 = UpConv(32 + channels[2], 128, 32)
+        self.up_conv3 = UpConv(32 + channels[3], 64, 32)
+        self.up_conv4 = UpConv(32 + channels[4], 32, 32)
+        self.up_conv5 = UpConv(32, 16, 32)
 
-        self.up_conv1 = up_conv(channels[0], 256)
-        self.double_conv1 = double_conv(channels[1]+256, 256)
-        self.up_conv2 = up_conv(256, 128)
-        self.double_conv2 = double_conv(channels[2]+128, 128)
-        self.up_conv3 = up_conv(128, 64)
-        self.double_conv3 = double_conv(channels[3]+64, 64)
-        self.up_conv4 = up_conv(64, 32)
-        self.double_conv4 = double_conv(channels[4]+32, 32)
+        self.header = nn.Conv2d(160, out_channel, kernel_size=1)
 
-        if self.concat_input:
-            self.up_conv_input = up_conv(32, 16)
-            self.double_conv_input = double_conv(3+16, 16)
-        self.header = nn.Conv2d(16, out_channel, kernel_size=1)
+    def forward(self, blocks):
+        b = blocks[-1]
+        d5 = self.up_conv1(b, blocks[-2])
+        d4 = self.up_conv2(d5, blocks[-3])
+        d3 = self.up_conv3(d4, blocks[-4])
+        d2 = self.up_conv4(d3, blocks[-5])
+        d1 = self.up_conv5(d2)
 
-    def forward(self, input_, blocks):
-        x = blocks[-1]
+        f = torch.cat((
+            d1,
+            F.upsample(d2, scale_factor=2, mode='bilinear', align_corners=False),
+            F.upsample(d3, scale_factor=4, mode='bilinear', align_corners=False),
+            F.upsample(d4, scale_factor=8, mode='bilinear', align_corners=False),
+            F.upsample(d5, scale_factor=16, mode='bilinear', align_corners=False),
+        ), 1)
 
-        x = self.up_conv1(x)
-        x = torch.cat([x, blocks[-2]], dim=1)
-        x = self.double_conv1(x)
+        f = F.dropout2d(f, p=0.5)
 
-        x = self.up_conv2(x)
-        x = torch.cat([x, blocks[-3]], dim=1)
-        x = self.double_conv2(x)
-
-        x = self.up_conv3(x)
-        x = torch.cat([x, blocks[-4]], dim=1)
-        x = self.double_conv3(x)
-
-        x = self.up_conv4(x)
-        x = torch.cat([x, blocks[-5]], dim=1)
-        x = self.double_conv4(x)
-
-        if self.concat_input:
-            x = self.up_conv_input(x)
-            x = torch.cat([x, input_], dim=1)
-            x = self.double_conv_input(x)
-
-        return self.header(x)
+        return self.header(f)
 
 
 class EfficientSeg(nn.Module):
@@ -631,7 +669,7 @@ class EfficientSeg(nn.Module):
         classification = self.classifier(features)
         anchors = self.anchors(inputs, inputs.dtype)
 
-        kp_out = self.kp_header(inputs, blocks)
+        kp_out = self.kp_header(blocks)
         return kp_out, regression, classification, anchors
 
     def init_backbone(self, path):
