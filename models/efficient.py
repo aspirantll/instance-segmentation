@@ -511,7 +511,7 @@ class SpatialGate2d(nn.Module):
         module_input = x
         x = self.avg_pool(x)
         x = self.squeeze(x)
-        x = F.elu(x, inplace=True)
+        x = F.relu(x, inplace=True)
         x = self.expand(x)
         x = x.sigmoid()
         return module_input * x
@@ -538,12 +538,12 @@ class UpConv(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv2d(in_channels, temp_channel, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(temp_channel),
-            nn.ELU(inplace=True)
+            nn.ReLU(inplace=True)
         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(temp_channel, out_channels, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(out_channels),
-            nn.ELU(inplace=True)
+            nn.ReLU(inplace=True)
         )
         self.sc_gate = ChannelSpatialGate2d(out_channels)
 
