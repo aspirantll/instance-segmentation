@@ -565,7 +565,11 @@ class EfficientDecoder(nn.Module):
         self.up_conv4 = UpConv(32 + channels[4], 32, 32)
         self.up_conv5 = UpConv(32, 16, 32)
 
-        self.header = nn.Conv2d(160, out_channel, kernel_size=1)
+        self.header = nn.Sequential(
+            nn.Conv2d(160, 32, kernel_size=3, padding=1),
+            nn.ELU(inplace=True),
+            nn.Conv2d(32, out_channel, kernel_size=1, padding=0)
+        )
 
     def forward(self, blocks):
         b = blocks[-1]
