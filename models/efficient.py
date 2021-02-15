@@ -587,7 +587,7 @@ class EfficientDecoder(nn.Module):
             F.upsample(d5, scale_factor=16, mode='bilinear', align_corners=False),
         ), 1)
 
-        f = F.dropout2d(f, p=0.5)
+        # f = F.dropout2d(f, p=0.5)
 
         return self.header(f)
 
