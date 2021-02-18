@@ -2,7 +2,7 @@ data:
   eval_dir:  /media/liulei/Data/cityscapes
   save_dir: /media/liulei/Data/checkpoints/mask/eval
   dataset: cityscapes
-  batch_size: 2
+  batch_size: 1
   input_size: (512, 1024)
   num_classes: -1
   subset: val
@@ -11,7 +11,7 @@ seed: 1
 compound_coef: 3
 anchors_scales: '[5, 2.75, 0.5]'
 anchors_ratios: '[(0.6, 1.5), (1, 1.6), (1, 0.8)]'
-weights_path: /media/liulei/Data/checkpoints/mask/efficient_weights_00000071.pth
+weights_path: /home/liulei/下载/efficient_weights_00000064.pth
 weights_dir: #/media/liulei/Data/checkpoints/mask/weights
 decode_cfg_path: ./configs/decode_cfg.yaml
 trans_cfg_path: ./configs/trans_cfg.json
