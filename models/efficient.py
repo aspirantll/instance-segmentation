@@ -570,7 +570,6 @@ class EfficientDecoder(nn.Module):
             nn.ELU(inplace=True),
             nn.Conv2d(32, out_channel, kernel_size=1, padding=0)
         )
-        self._dropout = nn.Dropout(p=0.5, inplace=True)
 
     def forward(self, blocks):
         b = blocks[-1]
@@ -588,7 +587,6 @@ class EfficientDecoder(nn.Module):
             F.upsample(d5, scale_factor=16, mode='bilinear', align_corners=False),
         ), 1)
 
-        f = self._dropout(f)
         return self.header(f)
 
 
