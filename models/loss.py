@@ -267,7 +267,7 @@ class AELoss(object):
                 o_rb = det_annotations[b_i, o_j, 2:4][::-1].astype(np.int32)
 
                 # calculate sigma
-                sigma_in = sigma[:, o_lt[0]:o_rb[0], o_lt[1]:o_rb[1]]
+                sigma_in = sigma[in_mask.expand_as(sigma)].view(1, -1)
 
                 s = sigma_in.mean().view(1, 1, 1)  # n_sigma x 1 x 1
 
@@ -277,7 +277,7 @@ class AELoss(object):
                                torch.pow(sigma_in - s.detach(), 2))
                 assert not torch.isnan(var_loss)
 
-                s = torch.exp(s)
+                s = torch.exp(s)*np.sqrt(np.dot(o_rb-o_lt, o_rb-o_lt))
 
                 # limit 2*box_size mask
                 lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)

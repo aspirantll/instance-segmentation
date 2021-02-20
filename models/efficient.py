@@ -559,16 +559,16 @@ class UpConv(nn.Module):
 class EfficientDecoder(nn.Module):
     def __init__(self, channels, out_channel):
         super().__init__()
-        self.up_conv1 = UpConv(channels[0] + channels[1], 256, 32)
-        self.up_conv2 = UpConv(32 + channels[2], 128, 32)
-        self.up_conv3 = UpConv(32 + channels[3], 64, 32)
-        self.up_conv4 = UpConv(32 + channels[4], 32, 32)
-        self.up_conv5 = UpConv(32, 16, 32)
+        self.up_conv1 = UpConv(channels[0] + channels[1], 256, 256)
+        self.up_conv2 = UpConv(256 + channels[2], 128, 128)
+        self.up_conv3 = UpConv(128 + channels[3], 64, 64)
+        self.up_conv4 = UpConv(64 + channels[4], 32, 32)
+        self.up_conv5 = UpConv(32, 16, 16)
 
         self.header = nn.Sequential(
-            nn.Conv2d(160, 32, kernel_size=3, padding=1),
+            nn.Conv2d(16, 16, kernel_size=3, padding=1),
             nn.ELU(inplace=True),
-            nn.Conv2d(32, out_channel, kernel_size=1, padding=0)
+            nn.Conv2d(16, out_channel, kernel_size=1, padding=0)
         )
 
     def forward(self, blocks):
@@ -579,15 +579,7 @@ class EfficientDecoder(nn.Module):
         d2 = self.up_conv4(d3, blocks[-5])
         d1 = self.up_conv5(d2)
 
-        f = torch.cat((
-            d1,
-            F.upsample(d2, scale_factor=2, mode='bilinear', align_corners=False),
-            F.upsample(d3, scale_factor=4, mode='bilinear', align_corners=False),
-            F.upsample(d4, scale_factor=8, mode='bilinear', align_corners=False),
-            F.upsample(d5, scale_factor=16, mode='bilinear', align_corners=False),
-        ), 1)
-
-        return self.header(f)
+        return self.header(d1)
 
 
 class EfficientSeg(nn.Module):

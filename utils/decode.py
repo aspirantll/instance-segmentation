@@ -85,7 +85,8 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, devic
         center = xym_s[:, center_index[0], center_index[1]].view(2, 1, 1)
         lt, rb = generate_corner(center_index, box_wh, h, w, 1.0)
         selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
-        s = torch.exp(sigma[:, center_index[0], center_index[1]])
+        s = torch.exp(sigma[:, center_index[0], center_index[1]])*np.sqrt(np.dot(box_wh, box_wh))
+
         dist = torch.exp(-1 * torch.sum(torch.pow(selected_spatial_emb -
                                                   center, 2) * s, 0, keepdim=True)).squeeze()
 
