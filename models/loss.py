@@ -267,7 +267,7 @@ class AELoss(object):
                 o_rb = det_annotations[b_i, o_j, 2:4][::-1].astype(np.int32)
 
                 # calculate sigma
-                sigma_in = sigma[:, o_lt[0]:o_rb[0], o_lt[1]:o_rb[1]]
+                sigma_in = sigma[in_mask.expand_as(sigma)]
 
                 s = sigma_in.mean().view(1, 1, 1)  # n_sigma x 1 x 1
 
@@ -279,12 +279,12 @@ class AELoss(object):
 
                 s = torch.exp(s)
 
+                center = spatial_emb[in_mask.expand_as(spatial_emb)].view(
+                    2, -1).mean(1).view(2, 1, 1)
                 # limit 2*box_size mask
                 lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)
                 selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
                 label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
-                center_index = ((o_lt+o_rb)/2).astype(np.int32)
-                center = xym_s[:, center_index[0], center_index[1]].view(2,1,1)
                 # calculate gaussian
                 dist = torch.exp(-1 * torch.sum(
                     torch.pow(selected_spatial_emb - center, 2) * s, 0, keepdim=True))
