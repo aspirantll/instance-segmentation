@@ -208,6 +208,13 @@ class DetFocalLoss(nn.Module):
                 else:
                     embedding_losses.append(torch.tensor(0).to(dtype))
                     regression_losses.append(torch.tensor(0).to(dtype))
+
+                for ann_ind in range(box_num):
+                    target_embedding = torch.zeros((2), dtype=dtype)
+                    if torch.cuda.is_available():
+                        target_embedding = target_embedding.cuda()
+                    embeddings.append(target_embedding)
+
             center_embeddings.append(embeddings)
 
         return [torch.stack(classification_losses).mean(dim=0),
