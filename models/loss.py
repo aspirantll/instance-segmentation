@@ -76,6 +76,7 @@ class DetFocalLoss(nn.Module):
 
             box_num = bbox_annotation.shape[0]
             if box_num == 0:
+                center_embeddings.append([])
                 if torch.cuda.is_available():
                     alpha_factor = torch.ones_like(classification) * alpha
                     alpha_factor = alpha_factor.cuda()
