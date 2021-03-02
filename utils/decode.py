@@ -55,7 +55,7 @@ def smooth_dist(dist):
     return nn.functional.conv2d(dist.unsqueeze(0).unsqueeze(0), weights, padding=1).squeeze(0).squeeze(0)
 
 
-def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, device):
+def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, center_embeddings, device):
     """
     group the bounds key points
     :param hm_kp: heat map for key point, 0-1 mask, 2-dims:h*w
@@ -82,7 +82,7 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, devic
         if box_wh[0] < 2 or box_wh[1] < 2:
             continue
 
-        center = spatial_emb[:, center_index[0], center_index[1]].view(2, 1, 1)
+        center = (xym_s[:, center_index[0], center_index[1]]+torch.tanh(center_embeddings[i])).view(2, 1, 1)
         lt, rb = generate_corner(center_index, box_wh, h, w, 1.0)
         selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
         s = torch.exp(sigma[:, center_index[0], center_index[1]])
@@ -147,11 +147,13 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
                 'rois': np.array(()),
                 'class_ids': np.array(()),
                 'scores': np.array(()),
+                'embeddings': np.array(())
             })
             continue
 
         classification_per = classification[i, scores_over_thresh[i, :], ...].permute(1, 0)
         transformed_anchors_per = transformed_anchors[i, scores_over_thresh[i, :], ...]
+        embedding_per = regression[i, scores_over_thresh[i, :], 4:]
         scores_per = scores[i, scores_over_thresh[i, :], ...]
         scores_, classes_ = classification_per.max(dim=0)
         anchors_nms_idx = batched_nms(transformed_anchors_per, scores_per[:, 0], classes_, iou_threshold=iou_threshold)
@@ -165,25 +167,27 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
                 'rois': boxes_.cpu().numpy(),
                 'class_ids': classes_.cpu().numpy(),
                 'scores': scores_.cpu().numpy(),
+                'embeddings': embedding_per.cpu().numpy()
             })
         else:
             dets.append({
                 'rois': np.array(()),
                 'class_ids': np.array(()),
                 'scores': np.array(()),
+                'embeddings': np.array(())
             })
 
     return dets
 
 
 def decode_single(ae_mat, dets, info, decode_cfg, device):
-    cls_ids, boxes, confs = dets["class_ids"], dets["rois"], dets["scores"]
+    cls_ids, boxes, confs, center_embeddings = dets["class_ids"], dets["rois"], dets["scores"], dets["embeddings"]
     if len(cls_ids) == 0:
         return ([], [])
     boxes_lt = boxes[:, :2][:, ::-1]
     boxes_rb = boxes[:, 2:][:, ::-1]
 
-    cls_ids, confs, instance_ids, instance_map = group_instance_map(ae_mat, cls_ids, confs, boxes_lt, boxes_rb, device)
+    cls_ids, confs, instance_ids, instance_map = group_instance_map(ae_mat, cls_ids, confs, boxes_lt, boxes_rb, center_embeddings,device)
     if decode_cfg.draw_flag:
         draw_box(boxes_lt[:, ::-1], boxes_rb[:, ::-1], cls_ids, confs, info)
         draw_instance_map(instance_map, info)

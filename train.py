@@ -122,7 +122,6 @@ def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
     :param save_dir:
     :return:
     """
-    model.init_weight()
 
     if pretrained is not None:
         state_dict = torch.load(pretrained)
@@ -147,7 +146,8 @@ def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
                     print('Ignoring ' + str(e) + '"')
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
-                save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)
+                model.init_weight()
+                save_checkpoint(model, optimizer, scheduler, start_epoch, data_cfg.save_dir)
                 return start_epoch+1
     # model.init_weight()
     save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)

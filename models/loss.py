@@ -53,6 +53,7 @@ class DetFocalLoss(nn.Module):
         batch_size = classifications.shape[0]
         classification_losses = []
         regression_losses = []
+        embedding_losses = []
 
         anchor = anchors[0, :, :]  # assuming all image sizes are the same, which it is
         dtype = anchors.dtype
@@ -62,6 +63,7 @@ class DetFocalLoss(nn.Module):
         anchor_ctr_x = anchor[:, 1] + 0.5 * anchor_widths
         anchor_ctr_y = anchor[:, 0] + 0.5 * anchor_heights
 
+        center_embeddings = []
         for j in range(batch_size):
 
             classification = classifications[j, :, :]
@@ -72,9 +74,9 @@ class DetFocalLoss(nn.Module):
 
             classification = torch.clamp(classification, 1e-4, 1.0 - 1e-4)
 
-            if bbox_annotation.shape[0] == 0:
+            box_num = bbox_annotation.shape[0]
+            if box_num == 0:
                 if torch.cuda.is_available():
-
                     alpha_factor = torch.ones_like(classification) * alpha
                     alpha_factor = alpha_factor.cuda()
                     alpha_factor = 1. - alpha_factor
@@ -85,10 +87,10 @@ class DetFocalLoss(nn.Module):
 
                     cls_loss = focal_weight * bce
 
+                    embedding_losses.append(torch.tensor(0).to(dtype).cuda())
                     regression_losses.append(torch.tensor(0).to(dtype).cuda())
                     classification_losses.append(cls_loss.sum())
                 else:
-
                     alpha_factor = torch.ones_like(classification) * alpha
                     alpha_factor = 1. - alpha_factor
                     focal_weight = classification
@@ -98,6 +100,7 @@ class DetFocalLoss(nn.Module):
 
                     cls_loss = focal_weight * bce
 
+                    embedding_losses.append(torch.tensor(0).to(dtype))
                     regression_losses.append(torch.tensor(0).to(dtype))
                     classification_losses.append(cls_loss.sum())
 
@@ -142,7 +145,29 @@ class DetFocalLoss(nn.Module):
 
             classification_losses.append(cls_loss.sum() / torch.clamp(num_positive_anchors.to(dtype), min=1.0))
 
+            embeddings = []
             if positive_indices.sum() > 0:
+                positive_argmax = IoU_argmax[positive_indices]
+                positive_regressions = regression[positive_indices, 4:]
+                positive_ann_indices = positive_argmax.unique()
+
+                embedding_loss = torch.tensor(0).to(dtype)
+                if torch.cuda.is_available():
+                    embedding_loss = embedding_loss.cuda()
+
+                for ann_ind in range(box_num):
+                    if ann_ind not in positive_ann_indices:
+                        target_embedding = torch.zeros((2), dtype=dtype)
+                        if torch.cuda.is_available():
+                            target_embedding = target_embedding.cuda()
+                    else:
+                        anchor_indices = positive_argmax == ann_ind
+                        target_embedding = positive_regressions[anchor_indices].mean(dim=0)
+                        embedding_loss = embedding_loss + torch.mean(torch.pow(positive_regressions[anchor_indices] - target_embedding.detach(), 2))
+                    embeddings.append(target_embedding)
+
+                embedding_losses.append(embedding_loss/max(box_num, 1))
+
                 assigned_annotations = assigned_annotations[positive_indices, :]
 
                 anchor_widths_pi = anchor_widths[positive_indices]
@@ -167,7 +192,7 @@ class DetFocalLoss(nn.Module):
                 targets = torch.stack((targets_dy, targets_dx, targets_dh, targets_dw))
                 targets = targets.t()
 
-                regression_diff = torch.abs(targets - regression[positive_indices, :])
+                regression_diff = torch.abs(targets - regression[positive_indices, :4])
 
                 regression_loss = torch.where(
                     torch.le(regression_diff, 1.0 / 9.0),
@@ -177,13 +202,16 @@ class DetFocalLoss(nn.Module):
                 regression_losses.append(regression_loss.mean())
             else:
                 if torch.cuda.is_available():
+                    embedding_losses.append(torch.tensor(0).to(dtype).cuda())
                     regression_losses.append(torch.tensor(0).to(dtype).cuda())
                 else:
+                    embedding_losses.append(torch.tensor(0).to(dtype))
                     regression_losses.append(torch.tensor(0).to(dtype))
+            center_embeddings.append(embeddings)
 
-        return [torch.stack(classification_losses).mean(dim=0), \
-                torch.stack(regression_losses).mean(
-                    dim=0) * 50]  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
+        return [torch.stack(classification_losses).mean(dim=0),
+                torch.stack(regression_losses).mean(dim=0) * 50,
+                torch.stack(embedding_losses).mean(dim=0)], center_embeddings  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
 
 
 def zero_tensor(device):
@@ -232,7 +260,7 @@ class AELoss(object):
         self._weight = weight
         self._xym = generate_coordinates().to(device)
 
-    def __call__(self, ae, targets):
+    def __call__(self, ae, targets, center_embeddings):
         """
         :param ae:
         :param targets: (instance_map_list)
@@ -279,12 +307,12 @@ class AELoss(object):
 
                 s = torch.exp(s)
 
-                center = spatial_emb[in_mask.expand_as(spatial_emb)].view(
-                    2, -1).mean(1).view(2, 1, 1)
                 # limit 2*box_size mask
                 lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)
                 selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
                 label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
+                center_index = ((o_lt+o_rb)/2).astype(np.int32)
+                center = (xym_s[:, center_index[0], center_index[1]]+torch.tanh(center_embeddings[b_i][o_j])).view(2,1,1)
                 # calculate gaussian
                 dist = torch.exp(-1 * torch.sum(
                     torch.pow(selected_spatial_emb - center, 2) * s, 0, keepdim=True))
@@ -302,7 +330,7 @@ class ComposeLoss(nn.Module):
     def __init__(self, device):
         super(ComposeLoss, self).__init__()
         self._device = device
-        self._loss_names = ["cls_loss", "wh_loss", "ae_loss", "total_loss"]
+        self._loss_names = ["cls_loss", "wh_loss", "center_loss", "ae_loss", "total_loss"]
         self.det_focal_loss = DetFocalLoss()
         self.ae_loss = AELoss(device)
 
@@ -312,9 +340,10 @@ class ComposeLoss(nn.Module):
         det_annotations, instance_ids_list, instance_map_list = generate_all_annotations(kp_out.shape, targets, self._device)
 
         losses = []
-        losses.extend(self.det_focal_loss(classification, regression, anchors,
-                                          torch.from_numpy(det_annotations).to(self._device)))
-        losses.append(self.ae_loss(kp_out, (det_annotations, instance_ids_list, instance_map_list)))
+        det_losses, center_embeddings = self.det_focal_loss(classification, regression, anchors,
+                                          torch.from_numpy(det_annotations).to(self._device))
+        losses.extend(det_losses)
+        losses.append(self.ae_loss(kp_out, (det_annotations, instance_ids_list, instance_map_list), center_embeddings))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()
