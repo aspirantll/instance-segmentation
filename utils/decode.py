@@ -162,12 +162,13 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
             classes_ = classes_[anchors_nms_idx]
             scores_ = scores_[anchors_nms_idx]
             boxes_ = transformed_anchors_per[anchors_nms_idx, :]
+            embedding_per = embedding_per[anchors_nms_idx, :]
 
             dets.append({
                 'rois': boxes_.cpu().numpy(),
                 'class_ids': classes_.cpu().numpy(),
                 'scores': scores_.cpu().numpy(),
-                'embeddings': embedding_per.cpu().numpy()
+                'embeddings': embedding_per
             })
         else:
             dets.append({

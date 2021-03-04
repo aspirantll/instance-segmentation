@@ -8,7 +8,7 @@ import numpy as np
 from .efficientnet import EfficientNet as EffNet
 from .efficientnet.utils import MemoryEfficientSwish, Swish
 from .efficientnet.utils_extra import Conv2dStaticSamePadding, MaxPool2dStaticSamePadding
-from utils.utils import Anchors
+from utils.utils import Anchors, generate_coordinates
 
 
 class SeparableConvBlock(nn.Module):
@@ -355,7 +355,7 @@ class Regressor(nn.Module):
         self.bn_list = nn.ModuleList(
             [nn.ModuleList([nn.BatchNorm2d(in_channels, momentum=0.01, eps=1e-3) for i in range(num_layers)]) for j in
              range(pyramid_levels)])
-        self.header = SeparableConvBlock(in_channels, num_anchors * 6, norm=False, activation=False)
+        self.header = SeparableConvBlock(in_channels, num_anchors * 7, norm=False, activation=False)
         self.swish = MemoryEfficientSwish() if not onnx_export else Swish()
 
     def forward(self, inputs):
@@ -368,7 +368,7 @@ class Regressor(nn.Module):
             feat = self.header(feat)
 
             feat = feat.permute(0, 2, 3, 1)
-            feat = feat.contiguous().view(feat.shape[0], -1, 6)
+            feat = feat.contiguous().view(feat.shape[0], -1, 7)
 
             feats.append(feat)
 
@@ -556,30 +556,34 @@ class UpConv(nn.Module):
         return self.sc_gate(x)
 
 
-class EfficientDecoder(nn.Module):
-    def __init__(self, channels, out_channel):
+class SpatialHead(nn.Module):
+    def  __init__(self, in_channel, channels, out_channel):
         super().__init__()
-        self.up_conv1 = UpConv(channels[0] + channels[1], 256, 256)
-        self.up_conv2 = UpConv(256 + channels[2], 128, 128)
-        self.up_conv3 = UpConv(128 + channels[3], 64, 64)
-        self.up_conv4 = UpConv(64 + channels[4], 32, 32)
-        self.up_conv5 = UpConv(32, 16, 16)
+        self.up_conv3 = UpConv(in_channel + channels[3], 128, 128)
+        self.up_conv4 = UpConv(128 + channels[4], 64, 64)
+        self.up_conv5 = UpConv(64, 32, 32)
 
-        self.header = nn.Sequential(
-            nn.Conv2d(16, 16, kernel_size=3, padding=1),
+        self.conv = nn.Sequential(
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
             nn.ELU(inplace=True),
-            nn.Conv2d(16, out_channel, kernel_size=1, padding=0)
+            nn.Conv2d(32, out_channel, kernel_size=1, padding=0),
+            nn.Tanh()
         )
+        self._xym = generate_coordinates().cuda()
 
-    def forward(self, blocks):
-        b = blocks[-1]
-        d5 = self.up_conv1(b, blocks[-2])
-        d4 = self.up_conv2(d5, blocks[-3])
-        d3 = self.up_conv3(d4, blocks[-4])
+        self.header = nn.Conv2d(out_channel+out_channel, out_channel, kernel_size=1, padding=0)
+
+    def forward(self, x, blocks):
+        d3 = self.up_conv3(x, blocks[-4])
         d2 = self.up_conv4(d3, blocks[-5])
         d1 = self.up_conv5(d2)
 
-        return self.header(d1)
+        d = self.conv(d1)
+
+        xym_s = self._xym[:, 0:d.shape[2], 0:d.shape[3]].unsqueeze(0).expand(d.shape).contiguous()
+        d = torch.cat((d, xym_s), dim=1)
+
+        return self.header(d)
 
 
 class EfficientSeg(nn.Module):
@@ -646,7 +650,7 @@ class EfficientSeg(nn.Module):
             8: [640, 224, 80],
         }
 
-        self.kp_header = EfficientDecoder(channels[compound_coef], out_channel=3)
+        self.spatial_header = SpatialHead(self.fpn_num_filters[self.compound_coef], channels[compound_coef], out_channel=2)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -663,8 +667,8 @@ class EfficientSeg(nn.Module):
         classification = self.classifier(features)
         anchors = self.anchors(inputs, inputs.dtype)
 
-        kp_out = self.kp_header(blocks)
-        return kp_out, regression, classification, anchors
+        spatial_out = self.spatial_header(features[0], blocks)
+        return spatial_out, regression, classification, anchors
 
     def init_backbone(self, path):
         state_dict = torch.load(path)

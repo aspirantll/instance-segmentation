@@ -158,9 +158,7 @@ class DetFocalLoss(nn.Module):
 
                 for ann_ind in range(box_num):
                     if ann_ind not in positive_ann_indices:
-                        target_embedding = torch.zeros((2), dtype=dtype)
-                        if torch.cuda.is_available():
-                            target_embedding = target_embedding.cuda()
+                        target_embedding = torch.zeros((3), dtype=dtype)
                     else:
                         anchor_indices = positive_argmax == ann_ind
                         target_embedding = positive_regressions[anchor_indices].mean(dim=0)
@@ -210,9 +208,7 @@ class DetFocalLoss(nn.Module):
                     regression_losses.append(torch.tensor(0).to(dtype))
 
                 for ann_ind in range(box_num):
-                    target_embedding = torch.zeros((2), dtype=dtype)
-                    if torch.cuda.is_available():
-                        target_embedding = target_embedding.cuda()
+                    target_embedding = torch.zeros((3), dtype=dtype)
                     embeddings.append(target_embedding)
 
             center_embeddings.append(embeddings)
@@ -266,7 +262,6 @@ class AELoss(object):
     def __init__(self, device, weight=1):
         self._device = device
         self._weight = weight
-        self._xym = generate_coordinates().to(device)
 
     def __call__(self, ae, targets, center_embeddings):
         """
@@ -278,8 +273,6 @@ class AELoss(object):
         det_annotations, instance_ids_list, instance_map_list = targets
         b, c, h, w = ae.shape
 
-        xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
-
         ae_loss = zero_tensor(self._device)
         for b_i in range(b):
             instance_ids = instance_ids_list[b_i]
@@ -289,10 +282,8 @@ class AELoss(object):
             if n <= 0:
                 continue
 
-            spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
-            sigma = ae[b_i, 2:3]  # n_sigma x h x w
+            spatial_emb = ae[b_i, 0:2]  # 2 x h x w
 
-            var_loss = zero_tensor(self._device)
             instance_loss = zero_tensor(self._device)
 
             for o_j, instance_id in enumerate(instance_ids):
@@ -302,25 +293,17 @@ class AELoss(object):
                 o_lt = det_annotations[b_i, o_j, 0:2][::-1].astype(np.int32)
                 o_rb = det_annotations[b_i, o_j, 2:4][::-1].astype(np.int32)
 
-                # calculate sigma
-                sigma_in = sigma[in_mask.expand_as(sigma)]
+                center_embedding = center_embeddings[b_i][o_j]
+                if center_embedding.eq(0).all():
+                    continue
 
-                s = sigma_in.mean().view(1, 1, 1)  # n_sigma x 1 x 1
-
-                # calculate var loss before exp
-                var_loss = var_loss + \
-                           torch.mean(
-                               torch.pow(sigma_in - s.detach(), 2))
-                assert not torch.isnan(var_loss)
-
-                s = torch.exp(s)
+                s = torch.exp(center_embedding[2])
 
                 # limit 2*box_size mask
                 lt, rb = convert_corner_to_corner(o_lt, o_rb, h, w, 1.5)
                 selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
                 label_mask = in_mask[:, lt[0]:rb[0], lt[1]:rb[1]].float()
-                center_index = ((o_lt+o_rb)/2).astype(np.int32)
-                center = (xym_s[:, center_index[0], center_index[1]]+torch.tanh(center_embeddings[b_i][o_j])).view(2,1,1)
+                center = torch.tanh(center_embeddings[b_i][o_j][:2]).view(2,1,1)
                 # calculate gaussian
                 dist = torch.exp(-1 * torch.sum(
                     torch.pow(selected_spatial_emb - center, 2) * s, 0, keepdim=True))
@@ -329,7 +312,7 @@ class AELoss(object):
                 instance_loss = instance_loss + \
                                 lovasz_hinge(dist * 2 - 1, label_mask)
 
-            ae_loss += (var_loss + instance_loss) / max(n, 1)
+            ae_loss += instance_loss / max(n, 1)
         # compute mean loss
         return ae_loss / b
 
