@@ -262,6 +262,7 @@ class AELoss(object):
     def __init__(self, device, weight=1):
         self._device = device
         self._weight = weight
+        self._xym = generate_coordinates().to(device)
 
     def __call__(self, ae, targets, center_embeddings):
         """
@@ -273,6 +274,8 @@ class AELoss(object):
         det_annotations, instance_ids_list, instance_map_list = targets
         b, c, h, w = ae.shape
 
+        xym_s = self._xym[:, 0:h, 0:w].contiguous()  # 2 x h x w
+
         ae_loss = zero_tensor(self._device)
         for b_i in range(b):
             instance_ids = instance_ids_list[b_i]
@@ -282,7 +285,8 @@ class AELoss(object):
             if n <= 0:
                 continue
 
-            spatial_emb = ae[b_i, 0:2]  # 2 x h x w
+            spatial_emb = torch.tanh(ae[b_i, 0:2]) + xym_s  # 2 x h x w
+            sigma = ae[b_i, 2:3]  # n_sigma x h x w
 
             instance_loss = zero_tensor(self._device)
 

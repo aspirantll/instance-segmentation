@@ -8,7 +8,7 @@ import numpy as np
 from .efficientnet import EfficientNet as EffNet
 from .efficientnet.utils import MemoryEfficientSwish, Swish
 from .efficientnet.utils_extra import Conv2dStaticSamePadding, MaxPool2dStaticSamePadding
-from utils.utils import Anchors, generate_coordinates
+from utils.utils import Anchors
 
 
 class SeparableConvBlock(nn.Module):
@@ -563,27 +563,18 @@ class SpatialHead(nn.Module):
         self.up_conv4 = UpConv(128 + channels[4], 64, 64)
         self.up_conv5 = UpConv(64, 32, 32)
 
-        self.conv = nn.Sequential(
+        self.header = nn.Sequential(
             nn.Conv2d(32, 32, kernel_size=3, padding=1),
             nn.ELU(inplace=True),
-            nn.Conv2d(32, out_channel, kernel_size=1, padding=0),
-            nn.Tanh()
+            nn.Conv2d(32, out_channel, kernel_size=1, padding=0)
         )
-        self._xym = generate_coordinates().cuda()
-
-        self.header = nn.Conv2d(out_channel+out_channel, out_channel, kernel_size=1, padding=0)
 
     def forward(self, x, blocks):
         d3 = self.up_conv3(x, blocks[-4])
         d2 = self.up_conv4(d3, blocks[-5])
         d1 = self.up_conv5(d2)
 
-        d = self.conv(d1)
-
-        xym_s = self._xym[:, 0:d.shape[2], 0:d.shape[3]].unsqueeze(0).expand(d.shape).contiguous()
-        d = torch.cat((d, xym_s), dim=1)
-
-        return self.header(d)
+        return self.header(d1)
 
 
 class EfficientSeg(nn.Module):
@@ -679,7 +670,7 @@ class EfficientSeg(nn.Module):
             print('Ignoring ' + str(e) + '"')
 
     def init_weight(self):
-        for name, module in self.kp_header.named_modules():
+        for name, module in self.spatial_header.header.named_modules():
             is_conv_layer = isinstance(module, nn.Conv2d)
 
             if is_conv_layer:
@@ -694,3 +685,18 @@ class EfficientSeg(nn.Module):
                         torch.nn.init.constant_(module.bias, bias_value)
                     else:
                         module.bias.data.zero_()
+            for name, module in self.regressor.header.named_modules():
+                is_conv_layer = isinstance(module, nn.Conv2d)
+
+                if is_conv_layer:
+                    if "conv_list" or "header" in name:
+                        variance_scaling_(module.weight.data)
+                    else:
+                        nn.init.kaiming_uniform_(module.weight.data)
+
+                    if module.bias is not None:
+                        if "classifier.header" in name:
+                            bias_value = -np.log((1 - 0.01) / 0.01)
+                            torch.nn.init.constant_(module.bias, bias_value)
+                        else:
+                            module.bias.data.zero_()

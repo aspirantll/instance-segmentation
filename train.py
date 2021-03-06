@@ -147,7 +147,7 @@ def load_state_dict(model, optimizer, scheduler, save_dir, pretrained):
                 logger.write("loaded the weights:" + weight_path)
                 start_epoch = checkpoint["epoch"]
                 model.init_weight()
-                save_checkpoint(model, optimizer, scheduler, start_epoch, data_cfg.save_dir)
+                save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)
                 return start_epoch+1
     # model.init_weight()
     save_checkpoint(model, optimizer, scheduler, -1, data_cfg.save_dir)
