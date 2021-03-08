@@ -25,6 +25,8 @@ def eval_outputs(data_cfg, dataset, eval_dataloader, model, epoch, decode_cfg, d
     decode.device = device
     output_dir = os.path.join(data_cfg.save_dir, 'results_' + str(epoch))
 
+    if os.path.exists("./matches.json"):
+        os.remove("./matches.json")
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     os.mkdir(output_dir)

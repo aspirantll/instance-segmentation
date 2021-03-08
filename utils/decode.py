@@ -81,7 +81,7 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, cente
         if box_wh[0] < 2 or box_wh[1] < 2:
             continue
 
-        center = (xym_s[:, center_index[0], center_index[1]]+torch.tanh(center_embeddings[i])).view(2, 1, 1)
+        center = torch.tanh(center_embeddings[i][:2]).view(2, 1, 1)
         lt, rb = generate_corner(center_index, box_wh, h, w, 1.0)
         selected_spatial_emb = spatial_emb[:, lt[0]:rb[0], lt[1]:rb[1]]
         s = torch.exp(center_embeddings[i][2])

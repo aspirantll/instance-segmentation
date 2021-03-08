@@ -670,7 +670,7 @@ class EfficientSeg(nn.Module):
             print('Ignoring ' + str(e) + '"')
 
     def init_weight(self):
-        for name, module in self.spatial_header.header.named_modules():
+        for name, module in self.spatial_header.named_modules():
             is_conv_layer = isinstance(module, nn.Conv2d)
 
             if is_conv_layer:
@@ -685,18 +685,3 @@ class EfficientSeg(nn.Module):
                         torch.nn.init.constant_(module.bias, bias_value)
                     else:
                         module.bias.data.zero_()
-            for name, module in self.regressor.header.named_modules():
-                is_conv_layer = isinstance(module, nn.Conv2d)
-
-                if is_conv_layer:
-                    if "conv_list" or "header" in name:
-                        variance_scaling_(module.weight.data)
-                    else:
-                        nn.init.kaiming_uniform_(module.weight.data)
-
-                    if module.bias is not None:
-                        if "classifier.header" in name:
-                            bias_value = -np.log((1 - 0.01) / 0.01)
-                            torch.nn.init.constant_(module.bias, bias_value)
-                        else:
-                            module.bias.data.zero_()
