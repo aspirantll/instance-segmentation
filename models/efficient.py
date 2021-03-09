@@ -355,26 +355,33 @@ class Regressor(nn.Module):
         self.bn_list = nn.ModuleList(
             [nn.ModuleList([nn.BatchNorm2d(in_channels, momentum=0.01, eps=1e-3) for i in range(num_layers)]) for j in
              range(pyramid_levels)])
-        self.header = SeparableConvBlock(in_channels, num_anchors * 7, norm=False, activation=False)
+        self.header = SeparableConvBlock(in_channels, num_anchors * 4, norm=False, activation=False)
+        self.param_header = SeparableConvBlock(in_channels, num_anchors * 3, norm=False, activation=False)
         self.swish = MemoryEfficientSwish() if not onnx_export else Swish()
 
     def forward(self, inputs):
-        feats = []
+        box_feats = []
+        param_feats = []
         for feat, bn_list in zip(inputs, self.bn_list):
             for i, bn, conv in zip(range(self.num_layers), bn_list, self.conv_list):
                 feat = conv(feat)
                 feat = bn(feat)
                 feat = self.swish(feat)
-            feat = self.header(feat)
 
-            feat = feat.permute(0, 2, 3, 1)
-            feat = feat.contiguous().view(feat.shape[0], -1, 7)
+            box_feat = self.header(feat)
+            box_feat = box_feat.permute(0, 2, 3, 1)
+            box_feat = box_feat.contiguous().view(box_feat.shape[0], -1, 4)
+            box_feats.append(box_feat)
 
-            feats.append(feat)
+            param_feat = self.param_header(feat)
+            param_feat = param_feat.permute(0, 2, 3, 1)
+            param_feat = param_feat.contiguous().view(param_feat.shape[0], -1, 3)
+            param_feats.append(param_feat)
 
-        feats = torch.cat(feats, dim=1)
+        box_feats = torch.cat(box_feats, dim=1)
+        param_feats = torch.cat(param_feats, dim=1)
 
-        return feats
+        return box_feats, param_feats
 
 
 class Classifier(nn.Module):
@@ -654,12 +661,12 @@ class EfficientSeg(nn.Module):
         features = blocks[2:5]
         features = self.bifpn(features)
 
-        regression = self.regressor(features)
+        box_regression, center_regression = self.regressor(features)
         classification = self.classifier(features)
         anchors = self.anchors(inputs, inputs.dtype)
 
         spatial_out = self.spatial_header(features[0], blocks)
-        return spatial_out, regression, classification, anchors
+        return spatial_out, box_regression, center_regression, classification, anchors
 
     def init_backbone(self, path):
         state_dict = torch.load(path)
@@ -685,3 +692,18 @@ class EfficientSeg(nn.Module):
                         torch.nn.init.constant_(module.bias, bias_value)
                     else:
                         module.bias.data.zero_()
+            for name, module in self.regressor.header.named_modules():
+                is_conv_layer = isinstance(module, nn.Conv2d)
+
+                if is_conv_layer:
+                    if "conv_list" or "header" in name:
+                        variance_scaling_(module.weight.data)
+                    else:
+                        nn.init.kaiming_uniform_(module.weight.data)
+
+                    if module.bias is not None:
+                        if "classifier.header" in name:
+                            bias_value = -np.log((1 - 0.01) / 0.01)
+                            torch.nn.init.constant_(module.bias, bias_value)
+                        else:
+                            module.bias.data.zero_()

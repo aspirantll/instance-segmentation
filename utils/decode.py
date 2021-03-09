@@ -2,7 +2,7 @@ __copyright__ = \
     """
     Copyright &copyright © (c) 2020 The Board of xx University.
     All rights reserved.
-    
+
     This software is covered by China patents and copyright.
     This source code is to be used for academic research purposes only, and no commercial use is allowed.
     """
@@ -33,12 +33,13 @@ def to_numpy(tensor):
 def draw_instance_map(instance_map, trans_info):
     cv2.imwrite(
         r'{}/{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "instances"),
-        instance_map.astype(np.uint16)*1000)
+        instance_map.astype(np.uint16) * 1000)
 
 
 def draw_box(boxes_lt, boxes_rb, boxes_cls, boxes_confs, trans_info):
     img = cv2.imread(trans_info.img_path)
-    img = visualize_box(img, ((boxes_rb+boxes_lt)/2).astype(np.int32), (boxes_rb-boxes_lt).astype(np.int32), mask=True, cls_label=boxes_cls, cls_conf=boxes_confs)
+    img = visualize_box(img, ((boxes_rb + boxes_lt) / 2).astype(np.int32), (boxes_rb - boxes_lt).astype(np.int32),
+                        mask=True, cls_label=boxes_cls, cls_conf=boxes_confs)
     cv2.imwrite(
         r'{}/{}_{}.png'.format(base_dir, os.path.basename(trans_info.img_path), "box"),
         img)
@@ -47,11 +48,11 @@ def draw_box(boxes_lt, boxes_rb, boxes_cls, boxes_confs, trans_info):
 def draw_candid(kps, lt, rb, img, color):
     cv2.rectangle(img, lt, rb, color)
     return cv2.drawKeypoints(img, cv2.KeyPoint_convert(kps.reshape((-1, 1, 2))), None,
-                              color=color)
+                             color=color)
 
 
 def smooth_dist(dist):
-    weights = torch.tensor([1/9]*9).view((1, 1, 3, 3)).to(dist.device)
+    weights = torch.tensor([1 / 9] * 9).view((1, 1, 3, 3)).to(dist.device)
     return nn.functional.conv2d(dist.unsqueeze(0).unsqueeze(0), weights, padding=1).squeeze(0).squeeze(0)
 
 
@@ -68,10 +69,10 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, cente
     h, w = ae_mat.shape[1:]
     xym_s = xym[:, 0:h, 0:w].contiguous().to(device)
     spatial_emb = torch.tanh(ae_mat[0:2, :, :]) + xym_s
-    center_indexes = ((boxes_lt+boxes_rb)/2).astype(np.int32)
-    boxes_wh = (boxes_rb-boxes_lt).astype(np.int32)
+    center_indexes = ((boxes_lt + boxes_rb) / 2).astype(np.int32)
+    boxes_wh = (boxes_rb - boxes_lt).astype(np.int32)
 
-    n_boxes_cls, n_boxes_confs, instance_ids = [],[],[]
+    n_boxes_cls, n_boxes_confs, instance_ids = [], [], []
     instance_map = torch.zeros(h, w, dtype=torch.uint8, device=device)
     conf_map = torch.zeros(h, w, dtype=torch.float32, device=device)
     for i in range(objs_num):
@@ -93,8 +94,8 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, cente
         proposal = (dist > 0.5)
         # resolve the conflicts
         box_h, box_w = proposal.shape
-        area = box_h*box_w
-        if proposal.sum().item() < 128 or proposal.sum().item()/area < 0.3:
+        area = box_h * box_w
+        if proposal.sum().item() < 128 or proposal.sum().item() / area < 0.3:
             continue
 
         # nms
@@ -106,19 +107,19 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, cente
             if occupied_id == 0:
                 continue
             other_proposal = instance_map_cut.eq(occupied_id)
-            overlapped_area = other_proposal*proposal
-            if overlapped_area.sum().item()/proposal.sum().item() >= 0.5:
+            overlapped_area = other_proposal * proposal
+            if overlapped_area.sum().item() / proposal.sum().item() >= 0.5:
                 skip = True
                 break
-            if (conf_map_cut[overlapped_area] >= dist[overlapped_area]).sum() > overlapped_area.sum()/2:
+            if (conf_map_cut[overlapped_area] >= dist[overlapped_area]).sum() > overlapped_area.sum() / 2:
                 proposal[overlapped_area] = False
 
-        if skip or proposal.sum().item() < 128 or proposal.sum().item()/area < 0.3:
+        if skip or proposal.sum().item() < 128 or proposal.sum().item() / area < 0.3:
             continue
 
         cls_id = boxes_cls[i]
         conf = boxes_confs[i]
-        instance_id = i+1
+        instance_id = i + 1
 
         instance_map[lt[0]:rb[0], lt[1]:rb[1]][proposal] = instance_id
         conf_map[lt[0]:rb[0], lt[1]:rb[1]][proposal] = dist[proposal]
@@ -130,11 +131,11 @@ def group_instance_map(ae_mat, boxes_cls, boxes_confs, boxes_lt, boxes_rb, cente
     return n_boxes_cls, n_boxes_confs, instance_ids, instance_map.cpu().numpy()
 
 
-def decode_boxes(x, anchors, regression, classification, threshold, iou_threshold):
+def decode_boxes(x, anchors, box_regression, center_regression, classification, threshold, iou_threshold):
     regressBoxes = BBoxTransform()
     clipBoxes = ClipBoxes()
 
-    transformed_anchors = regressBoxes(anchors, regression)
+    transformed_anchors = regressBoxes(anchors, box_regression)
     transformed_anchors = clipBoxes(transformed_anchors, x)
     scores = torch.max(classification, dim=2, keepdim=True)[0]
     scores_over_thresh = (scores > threshold)[:, :, 0]
@@ -152,7 +153,7 @@ def decode_boxes(x, anchors, regression, classification, threshold, iou_threshol
 
         classification_per = classification[i, scores_over_thresh[i, :], ...].permute(1, 0)
         transformed_anchors_per = transformed_anchors[i, scores_over_thresh[i, :], ...]
-        embedding_per = regression[i, scores_over_thresh[i, :], 4:]
+        embedding_per = center_regression[i, scores_over_thresh[i, :], :]
         scores_per = scores[i, scores_over_thresh[i, :], ...]
         scores_, classes_ = classification_per.max(dim=0)
         anchors_nms_idx = batched_nms(transformed_anchors_per, scores_per[:, 0], classes_, iou_threshold=iou_threshold)
@@ -187,7 +188,8 @@ def decode_single(ae_mat, dets, info, decode_cfg, device):
     boxes_lt = boxes[:, :2][:, ::-1]
     boxes_rb = boxes[:, 2:][:, ::-1]
 
-    cls_ids, confs, instance_ids, instance_map = group_instance_map(ae_mat, cls_ids, confs, boxes_lt, boxes_rb, center_embeddings,device)
+    cls_ids, confs, instance_ids, instance_map = group_instance_map(ae_mat, cls_ids, confs, boxes_lt, boxes_rb,
+                                                                    center_embeddings, device)
     if decode_cfg.draw_flag:
         draw_box(boxes_lt[:, ::-1], boxes_rb[:, ::-1], cls_ids, confs, info)
         draw_instance_map(instance_map, info)
@@ -205,8 +207,9 @@ def decode_output(inputs, outs, infos, decode_cfg, device):
     :return:
     """
     # get output
-    kp_out, regression, classification, anchors = outs
-    det_boxes = decode_boxes(inputs, anchors, regression, classification, decode_cfg.cls_th, decode_cfg.iou_th)
+    kp_out, box_regression, center_regression, classification, anchors = outs
+    det_boxes = decode_boxes(inputs, anchors, box_regression, center_regression, classification, decode_cfg.cls_th,
+                             decode_cfg.iou_th)
 
     dets = parell_util.multi_apply(decode_single, kp_out, det_boxes, infos, decode_cfg=decode_cfg, device=device)
 

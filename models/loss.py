@@ -47,7 +47,7 @@ class DetFocalLoss(nn.Module):
     def __init__(self):
         super(DetFocalLoss, self).__init__()
 
-    def forward(self, classifications, regressions, anchors, annotations, **kwargs):
+    def forward(self, classifications, box_regressions, center_regressions, anchors, annotations, **kwargs):
         alpha = 0.25
         gamma = 2.0
         batch_size = classifications.shape[0]
@@ -67,7 +67,8 @@ class DetFocalLoss(nn.Module):
         for j in range(batch_size):
 
             classification = classifications[j, :, :]
-            regression = regressions[j, :, :]
+            box_regression = box_regressions[j, :, :]
+            center_regression = center_regressions[j, :, :]
 
             bbox_annotation = annotations[j]
             bbox_annotation = bbox_annotation[bbox_annotation[:, 4] != -1]
@@ -149,7 +150,7 @@ class DetFocalLoss(nn.Module):
             embeddings = []
             if positive_indices.sum() > 0:
                 positive_argmax = IoU_argmax[positive_indices]
-                positive_regressions = regression[positive_indices, 4:]
+                positive_regressions = center_regression[positive_indices, :]
                 positive_ann_indices = positive_argmax.unique()
 
                 embedding_loss = torch.tensor(0).to(dtype)
@@ -191,7 +192,7 @@ class DetFocalLoss(nn.Module):
                 targets = torch.stack((targets_dy, targets_dx, targets_dh, targets_dw))
                 targets = targets.t()
 
-                regression_diff = torch.abs(targets - regression[positive_indices, :4])
+                regression_diff = torch.abs(targets - box_regression[positive_indices, :4])
 
                 regression_loss = torch.where(
                     torch.le(regression_diff, 1.0 / 9.0),
@@ -216,10 +217,6 @@ class DetFocalLoss(nn.Module):
         return [torch.stack(classification_losses).mean(dim=0),
                 torch.stack(regression_losses).mean(dim=0) * 50,
                 torch.stack(embedding_losses).mean(dim=0)], center_embeddings  # https://github.com/google/automl/blob/6fdd1de778408625c1faf368a327fe36ecd41bf7/efficientdet/hparams_config.py#L233
-
-
-def zero_tensor(device):
-    return torch.tensor(0, dtype=torch.float32).to(device)
 
 
 def sigmoid_(tensor):
@@ -331,14 +328,14 @@ class ComposeLoss(nn.Module):
 
     def forward(self, outputs, targets):
         # unpack the output
-        kp_out, regression, classification, anchors = outputs
-        det_annotations, instance_ids_list, instance_map_list = generate_all_annotations(kp_out.shape, targets, self._device)
+        spatial_out, box_regression, center_regression, classification, anchors = outputs
+        det_annotations, instance_ids_list, instance_map_list = generate_all_annotations(spatial_out.shape, targets, self._device)
 
         losses = []
-        det_losses, center_embeddings = self.det_focal_loss(classification, regression, anchors,
+        det_losses, center_embeddings = self.det_focal_loss(classification, box_regression, center_regression, anchors,
                                           torch.from_numpy(det_annotations).to(self._device))
         losses.extend(det_losses)
-        losses.append(self.ae_loss(kp_out, (det_annotations, instance_ids_list, instance_map_list), center_embeddings))
+        losses.append(self.ae_loss(spatial_out, (det_annotations, instance_ids_list, instance_map_list), center_embeddings))
 
         # compute total loss
         total_loss = torch.stack(losses).sum()
