@@ -18,10 +18,7 @@
     }
   },
   "val_trans": {
-    "trans_seq": ["resize"],
-    "resize": {
-      "target_size": 2
-    }
+    "trans_seq": []
   },
   "normalize": {
     "div_value": 255.0,

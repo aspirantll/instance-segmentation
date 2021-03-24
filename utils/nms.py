@@ -37,3 +37,29 @@ def py_cpu_nms(dets, thresh):
         order = order[inds + 1]
 
     return keep
+
+
+def boxes_nms(dets, thresh):
+    cls_ids = dets["class_ids"]
+    contain_ids = np.unique(cls_ids)
+    if len(contain_ids) <= 0:
+        return [], [], []
+
+    n_cls_ids, n_boxes, n_confs = [], [], []
+    for cls_id in contain_ids:
+        cls_dets = []
+        for it, c_id in enumerate(cls_id):
+            if cls_id == c_id:
+                cls_dets.append(np.vstack(dets["rois"][it], dets["scores"][it]))
+        keep = py_cpu_nms(np.vstack(cls_dets), thresh)
+        for ind in keep:
+            insert_ind = 0
+            for conf in enumerate(n_confs):
+                if cls_dets[ind][4] > conf:
+                    break
+                insert_ind = insert_ind + 1
+
+            n_cls_ids.insert(insert_ind, cls_id)
+            n_boxes.insert(insert_ind, cls_dets[ind][:4])
+            n_confs.insert(insert_ind, [ind][4])
+    return n_cls_ids, n_boxes, n_confs
