@@ -1,5 +1,5 @@
-# instance segmentation based on boundary detection
-This project implements a new approach for object segementation.
+# instance segmentation based one stage object detector and spatial embeddings
+This project implements a new approach for instance segementation.
 ## requirements
 The dependencies are as following:
 * pytorch v1.3+
@@ -19,11 +19,7 @@ pip install torch===1.4.0 torchvision===0.5.0 -f https://download.pytorch.org/wh
 The dataset only support the cityscapes, the train command as following:
 ```shell script
 python train.py 
-    --save_dir results/checkpoints  
-    --train_dir /home/jovyan/work/val2017  
-    --val_dir /home/jovyan/work/val2017 
-    --batch_size 4  
-    --checkpoint_span 100
+    --cfg_path ./configs/train_cfg.yaml 
 ```
 
 ## demo imgs
